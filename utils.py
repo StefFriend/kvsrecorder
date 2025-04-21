@@ -11,7 +11,6 @@ import sys
 import hashlib
 import datetime
 
-
 def create_temp_directory(dir_path):
     """
     Create a temporary directory if it doesn't exist
@@ -226,7 +225,13 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
         file_size_kb = "N/A"
         if os.path.exists(audio_file_path):
             file_hash = calculate_file_hash(audio_file_path)
-            file_size_kb = f"{os.path.getsize(audio_file_path) / 1024:.2f} KB"
+            file_size_bytes = os.path.getsize(audio_file_path)
+            if file_size_bytes < 1024:
+                file_size_kb = f"{file_size_bytes} B"
+            elif file_size_bytes < 1024 * 1024:
+                file_size_kb = f"{file_size_bytes / 1024:.2f} KB"
+            else:
+                file_size_kb = f"{file_size_bytes / (1024 * 1024):.2f} MB"
             
         # Format command as string if it's a list
         if isinstance(ffmpeg_command, list):
@@ -236,7 +241,7 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
             
         # Create log content
         log_content = f"""
-AUDIO PRO ADVANCED - RECORDING LOG
+KVSrecorder - RECORDING LOG
 ==================================
 
 File Information:
@@ -324,6 +329,31 @@ def update_recording_log(log_file_path, end_time=None, file_hash=None):
                     milliseconds = int((total_seconds - int(total_seconds)) * 1000)
                     duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
                     log_content = log_content.replace("Duration: In Progress", f"Duration: {duration_str}")
+                    
+            # Also update file size if file path can be found
+            file_path = None
+            for line in log_content.split('\n'):
+                if line.startswith("File Path:"):
+                    file_path = line.replace("File Path: ", "").strip()
+                    break
+                    
+            if file_path and os.path.exists(file_path):
+                file_size_bytes = os.path.getsize(file_path)
+                if file_size_bytes < 1024:
+                    file_size_str = f"{file_size_bytes} B"
+                elif file_size_bytes < 1024 * 1024:
+                    file_size_str = f"{file_size_bytes / 1024:.2f} KB"
+                else:
+                    file_size_str = f"{file_size_bytes / (1024 * 1024):.2f} MB"
+                    
+                # Replace file size line (handle both N/A and actual values)
+                if "File Size: N/A" in log_content:
+                    log_content = log_content.replace("File Size: N/A", f"File Size: {file_size_str}")
+                else:
+                    # Try to find and replace existing file size
+                    import re
+                    file_size_pattern = r"File Size: .*$"
+                    log_content = re.sub(file_size_pattern, f"File Size: {file_size_str}", log_content, flags=re.MULTILINE)
         
         # Update file hash
         if file_hash:
