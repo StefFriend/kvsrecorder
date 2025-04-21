@@ -184,7 +184,7 @@ def calculate_file_hash(file_path, hash_type='sha256'):
     except Exception as e:
         return f"Error calculating hash: {str(e)}"
 
-def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_time, end_time=None):
+def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_time, end_time=None, version="1.0"):
     """
     Create a log file for a recording session
     
@@ -194,6 +194,7 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
         ffmpeg_command: The FFmpeg command used for recording
         start_time: Recording start time (datetime object)
         end_time: Recording end time (datetime object), or None if recording is in progress
+        version: Software version string
     
     Returns:
         bool: True if log was created successfully
@@ -241,7 +242,7 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
             
         # Create log content
         log_content = f"""
-KVSrecorder - RECORDING LOG
+KVSrecorder {version} - RECORDING LOG
 ==================================
 
 File Information:
@@ -265,6 +266,7 @@ System Information:
 ----------------
 Platform: {sys.platform}
 Python Version: {sys.version}
+KVSrecorder Version: {version}
 Log Created: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]}
 """
         

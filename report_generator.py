@@ -29,7 +29,7 @@ class ReportGeneratorThread(QThread):
     report_progress = pyqtSignal(str)
     report_finished = pyqtSignal(bool, str)
     
-    def __init__(self, output_file, format_sel, codec_sel, bitrate_sel, temp_dir):
+    def __init__(self, output_file, format_sel, codec_sel, bitrate_sel, temp_dir, version="1.0"):
         super().__init__()
         self.output_file = output_file
         self.format_sel = format_sel
@@ -37,6 +37,7 @@ class ReportGeneratorThread(QThread):
         self.bitrate_sel = bitrate_sel
         self.temp_dir = temp_dir
         self.channels = 1  # Default to mono
+        self.version = version  # Store the software version
         
     def calculate_file_hash(self, file_path):
         """Calculate SHA-256 hash of the audio file"""
@@ -52,8 +53,12 @@ class ReportGeneratorThread(QThread):
             self.report_progress.emit("Starting report generation...")
             
             # Verify file exists and is not empty
-            if not os.path.exists(self.output_file) or os.path.getsize(self.output_file) == 0:
-                self.report_finished.emit(False, f"Invalid or empty file: {self.output_file}")
+            if not os.path.exists(self.output_file):
+                self.report_finished.emit(False, f"File not found: {self.output_file}")
+                return
+                
+            if os.path.getsize(self.output_file) == 0:
+                self.report_finished.emit(False, f"File is empty: {self.output_file}")
                 return
                 
             # Create report filename
@@ -230,22 +235,26 @@ class ReportGeneratorThread(QThread):
             # Generate PDF with white and blue theme
             self.report_progress.emit("Creating PDF report...")
             class PDF(FPDF):
+                def __init__(self, version="1.0"):
+                    super().__init__()
+                    self.version = version
+                    
                 def header(self):
                     # Logo (if available)
                     # self.image('logo.png', 10, 8, 33)
-                    # Title in blue
+                    # Title in blue with version
                     self.set_font('Arial', 'B', 18)
                     self.set_text_color(26, 115, 232)  # #1a73e8
-                    self.cell(0, 10, 'KVSrecorder', 0, 1, 'C')
+                    self.cell(0, 10, f'KVSrecorder {self.version}', 0, 1, 'C')
                     self.ln(10)
                 
                 def footer(self):
                     self.set_y(-15)
                     self.set_font('Arial', 'I', 8)
                     self.set_text_color(26, 115, 232)  # #1a73e8
-                    self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
+                    self.cell(0, 10, f'Page {self.page_no()}/{{nb}} - KVSrecorder {self.version}', 0, 0, 'C')
             
-            pdf = PDF()
+            pdf = PDF(self.version)
             pdf.alias_nb_pages()
             pdf.add_page()
             
@@ -281,6 +290,10 @@ class ReportGeneratorThread(QThread):
             # Add file hash
             pdf.cell(50, 8, f"SHA-256 Hash:", 0)
             pdf.cell(0, 8, f"{file_hash}", 0, 1)
+            
+            # Add software version
+            pdf.cell(50, 8, f"Software Version:", 0)
+            pdf.cell(0, 8, f"KVSrecorder {self.version}", 0, 1)
             
             pdf.ln(5)
             pdf.set_font("Arial", "B", 12)
@@ -335,19 +348,7 @@ class ReportGeneratorThread(QThread):
             self.report_progress.emit("Saving report...")
             pdf.output(pdf_path)
             
-            # Automatically open the report if requested
-            try:
-                if os.path.exists(pdf_path):
-                    if sys.platform == 'win32':
-                        os.startfile(pdf_path)
-                    elif sys.platform == 'darwin':  # macOS
-                        subprocess.run(['open', pdf_path])
-                    else:  # Linux
-                        subprocess.run(['xdg-open', pdf_path])
-            except Exception as e:
-                self.report_progress.emit(f"Warning: Unable to automatically open report: {str(e)}")
-            
-            # Signal successful completion
+            # Signal successful completion without opening the PDF
             self.report_finished.emit(True, pdf_path)
                     
         except Exception as e:

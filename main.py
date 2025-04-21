@@ -1,5 +1,5 @@
 """
-Audio Pro Advanced - Main Application Entry Point
+KVSrecorder - Main Application Entry Point
 
 A professional audio recording and analysis application with advanced features
 including waveform visualization, spectrograms, and detailed audio reports.

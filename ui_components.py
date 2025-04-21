@@ -28,10 +28,13 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message="PySoundFile failed")
 warnings.filterwarnings("ignore", message="amplitude_to_db was called on complex input")
 
+# Software version - easy to modify in one place
+SOFTWARE_VERSION = "1.0.2"
+
 class AudioProAdvanced(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("KVSrecorder")
+        self.setWindowTitle(f"KVSrecorder {SOFTWARE_VERSION}")
         self.resize(900, 700)
         
         # Apply white and blue theme
@@ -699,16 +702,14 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                     # Start report generation in separate thread
                     self.start_report_generation(self.recorder.output_file)
                     
-                    # If dual format was used, schedule the second report
+                    # If dual format was used, store the second file info
                     if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                        self.second_report_file = self.recorder.output_file2
                         QtWidgets.QMessageBox.information(
                             self,
                             "Dual Format Report",
                             "A report will also be generated for the second format recording after the first one completes."
                         )
-                        # Store second file to generate its report after the first one finishes
-                        print(f"Scheduling second report for: {self.recorder.output_file2}")
-                        self.second_report_file = self.recorder.output_file2
             else:
                 self.play_btn.setEnabled(False)
                 self.statusBar().showMessage("Error: Recording was not saved")
@@ -735,293 +736,6 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             self.format_sel, 
             self.codec_sel, 
             self.bitrate_sel, 
-            self.temp_dir
+            self.temp_dir,
+            SOFTWARE_VERSION  # Pass the software version
         )
-        self.report_generator.report_progress.connect(self.handle_report_progress)
-        self.report_generator.report_finished.connect(self.handle_report_finished)
-        self.report_generator.start()
-
-    def update_visualization(self):
-        """Update real-time visualization during recording"""
-        try:
-            if not self.recorder.frames:
-                return
-                
-            audio_data = np.frombuffer(self.recorder.frames[-1], dtype=np.int16)
-            peak = np.abs(audio_data).max()
-            self.vu_meter.setValue(int(peak/32767*100))
-            
-            # Ensure temp directory exists
-            if not os.path.exists(self.temp_dir):
-                os.makedirs(self.temp_dir)
-                
-            # Draw waveform
-            plt.figure(figsize=(6,2), facecolor='white')
-            plt.plot(audio_data, linewidth=0.8, color='#4CAF50')  # Changed to green
-            plt.axis('off')
-            plt.tight_layout()
-            
-            temp_file = os.path.join(self.temp_dir, 'live_waveform.png')
-            plt.savefig(temp_file, facecolor='white')
-            plt.close()
-            
-            # Verify file was created before using it
-            if os.path.exists(temp_file):
-                pixmap = QtGui.QPixmap(temp_file)
-                self.waveform_label.setPixmap(pixmap.scaled(
-                    self.waveform_label.width(), 
-                    self.waveform_label.height(), 
-                    QtCore.Qt.AspectRatioMode.KeepAspectRatio
-                ))
-            else:
-                # If file doesn't exist, show only text
-                self.waveform_label.setText("Updating visualization...")
-            
-        except Exception as e:
-            # Limit error messages
-            if not hasattr(self, '_logged_viz_error'):
-                self._logged_viz_error = True
-                self.statusBar().showMessage(f"Visualization error: {str(e)}")
-                print(f"Error updating visualization: {e}")
-
-    def update_time_display(self):
-        """Update recording time display with milliseconds"""
-        elapsed = time.time() - self.recording_start_time
-        time_str = format_time(elapsed)  # Using the updated format_time function
-        self.time_display.setText(time_str)
-    
-    def blink_recording_indicator(self):
-        """Make recording indicator blink"""
-        if self.blink_state:
-            self.recording_indicator.setStyleSheet("font-size: 24px; color: #e63946;")  # Red on
-        else:
-            self.recording_indicator.setStyleSheet("font-size: 24px; color: gray;")  # Off
-        
-        self.blink_state = not self.blink_state
-    
-    def update_file_status(self, is_recording, file_size_kb):
-        """Update recording file status"""
-        if is_recording:
-            # Format file size
-            if file_size_kb < 1024:
-                size_str = f"{file_size_kb} KB"
-            else:
-                size_str = f"{file_size_kb/1024:.1f} MB"
-            
-            # Check if dual format is enabled
-            dual_format = hasattr(self.recorder, 'dual_format_enabled') and self.recorder.dual_format_enabled
-            
-            # Update status with size information
-            if dual_format:
-                # For dual format, try to get the second file size
-                second_file_size = 0
-                if hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
-                    second_file_size = os.path.getsize(self.recorder.output_file2) / 1024
-                
-                # Format second file size
-                if second_file_size < 1024:
-                    size_str2 = f"{int(second_file_size)} KB"
-                else:
-                    size_str2 = f"{second_file_size/1024:.1f} MB"
-                
-                self.file_status.setText(f"Recording active: {size_str} + {size_str2}")
-            else:
-                self.file_status.setText(f"Recording active: {size_str}")
-            
-            # Change color based on file growth
-            if file_size_kb > 0:
-                self.file_status.setStyleSheet("color: #4CAF50; font-weight: bold;")  # Green
-            else:
-                self.file_status.setStyleSheet("color: #FFC107; font-weight: bold;")  # Yellow warning
-        else:
-            self.file_status.setText("Not recording")
-            self.file_status.setStyleSheet("font-style: italic; color: gray;")
-    
-    def handle_report_progress(self, message):
-        """Handle report progress updates"""
-        self.report_status.setText(message)
-        
-    def handle_report_finished(self, success, message):
-        """Handle report generation completion"""
-        # Store reference to the just-completed report
-        completed_report = self.report_generator
-        self.report_generator = None
-        self.report_progress_bar.setVisible(False)
-        
-        if success:
-            self.report_status.setText(f"Report saved: {message}")
-            self.report_status.setStyleSheet("color: #4CAF50;")  # Green
-            
-            # Check if we need to generate a report for a second file
-            if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
-                second_file = self.second_report_file
-                self.second_report_file = None  # Clear the reference
-                
-                # Print debug info
-                print(f"Starting second report for file: {second_file}")
-                
-                # Use QTimer.singleShot with lambda that explicitly captures the second_file variable
-                second_file_copy = second_file  # Make an explicit copy to avoid reference issues
-                QtCore.QTimer.singleShot(1500, lambda file=second_file_copy: self.start_second_report(file))
-        else:
-            self.report_status.setText(f"Report error: {message}")
-            self.report_status.setStyleSheet("color: #e63946;")  # Red
-            
-            # If there was a second file pending, try to generate its report anyway
-            if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
-                second_file = self.second_report_file
-                self.second_report_file = None  # Clear the reference
-                second_file_copy = second_file  # Make an explicit copy
-                # Start report generation for second file after a short delay
-                QtCore.QTimer.singleShot(1500, lambda file=second_file_copy: self.start_second_report(file))
-        
-        # Hide message after 15 seconds instead of 10
-        QTimer.singleShot(15000, lambda: self.report_status.setText(""))
-        
-    def start_second_report(self, file_path):
-        """Start generation of the second report (for dual format)"""
-        if not file_path or not os.path.exists(file_path):
-            self.report_status.setText("Error: Second format file not found")
-            self.report_status.setStyleSheet("color: #e63946;")  # Red
-            return
-            
-        # Print debug info about file path and format
-        print(f"Starting second report for: {file_path}")
-        print(f"Format: {self.format_sel2.currentText()}, Codec: {self.codec_sel2.currentText()}")
-        
-        # Find the matching format for the file extension
-        file_ext = os.path.splitext(file_path)[1].lower()[1:]  # Get extension without dot
-        if self.format_sel2.currentText() != file_ext:
-            # If current format doesn't match file extension, find the right one
-            for i in range(self.format_sel2.count()):
-                if self.format_sel2.itemText(i) == file_ext:
-                    self.format_sel2.setCurrentIndex(i)
-                    break
-            
-        self.report_status.setText("Preparing second format report...")
-        self.report_progress_bar.setVisible(True)
-        
-        # Create and start report thread for second file with correct format settings
-        report_generator = ReportGeneratorThread(
-            file_path, 
-            self.format_sel2,    # Use second format settings 
-            self.codec_sel2,     # Use second codec settings
-            self.bitrate_sel2,   # Use second bitrate settings
-            self.temp_dir
-        )
-        self.report_generator = report_generator
-        self.report_generator.report_progress.connect(self.handle_report_progress)
-        self.report_generator.report_finished.connect(self.handle_report_finished)
-        self.report_generator.start()
-
-    def play_recording(self):
-        """Play the recorded audio file with default application"""
-        try:
-            dual_format = hasattr(self, 'last_recorded_file2') and self.last_recorded_file2
-            
-            # Play primary recording
-            if self.recorder.output_file and os.path.exists(self.recorder.output_file):
-                open_file_with_default_app(self.recorder.output_file)
-                # Also open the log file if it exists
-                if self.recorder.log_file and os.path.exists(self.recorder.log_file):
-                    open_file_with_default_app(self.recorder.log_file)
-                    
-                # Open second recording if dual format was used
-                if self.recorder.dual_format_enabled and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
-                    open_file_with_default_app(self.recorder.output_file2)
-                    if self.recorder.log_file2 and os.path.exists(self.recorder.log_file2):
-                        open_file_with_default_app(self.recorder.log_file2)
-                    
-            elif self.last_recorded_file and os.path.exists(self.last_recorded_file):
-                open_file_with_default_app(self.last_recorded_file)
-                # Try to open the corresponding log file
-                log_file = os.path.splitext(self.last_recorded_file)[0] + "_log"
-                if os.path.exists(log_file):
-                    open_file_with_default_app(log_file)
-                    
-                # Open second recording if dual format was used
-                if dual_format and os.path.exists(self.last_recorded_file2):
-                    open_file_with_default_app(self.last_recorded_file2)
-                    log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log"
-                    if os.path.exists(log_file2):
-                        open_file_with_default_app(log_file2)
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to play file: {str(e)}")
-
-    def play_second_format(self):
-        """Play the second format recording if it exists"""
-        try:
-            if hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
-                open_file_with_default_app(self.recorder.output_file2)
-                # Also open the second log file if it exists
-                if hasattr(self.recorder, 'log_file2') and self.recorder.log_file2 and os.path.exists(self.recorder.log_file2):
-                    open_file_with_default_app(self.recorder.log_file2)
-            elif hasattr(self, 'last_recorded_file2') and self.last_recorded_file2 and os.path.exists(self.last_recorded_file2):
-                open_file_with_default_app(self.last_recorded_file2)
-                # Try to open the corresponding log file
-                log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log.txt"
-                if os.path.exists(log_file2):
-                    open_file_with_default_app(log_file2)
-            else:
-                QtWidgets.QMessageBox.information(self, "Information", "No second format recording is available")
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to play second format file: {str(e)}")
-
-    def show_report_dialog(self):
-        """Show dialog to select an audio file for report generation"""
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Select Audio File for Report",
-            self.output_path.text(),
-            "Audio Files (*.wav *.mp3 *.ogg *.flac *.m4a);;All Files (*.*)"
-        )
-        
-        if file_path and os.path.exists(file_path):
-            self.last_recorded_file = file_path
-            self.start_report_generation(file_path)
-    
-    def show_about_dialog(self):
-        """Show about dialog"""
-        QtWidgets.QMessageBox.about(
-            self,
-            "About KVSrecorder",
-            """<h2>KVSrecorder</h2>
-            <p>A professional audio recording and analysis application.</p>
-            <p>Features:</p>
-            <ul>
-                <li>High-quality audio recording with custom format selection</li>
-                <li>Dual format simultaneous recording</li>
-                <li>Real-time visualization</li>
-                <li>Detailed audio reports with waveform and spectrogram</li>
-                <li>Support for multiple audio formats and codecs including HE-AAC</li>
-                <li>File integrity verification with SHA-256 hash</li>
-            </ul>
-            <p>Version 1.0</p>"""
-        )
-
-    def closeEvent(self, event):
-        """Handle window close event"""
-        # Clean up resources
-        if self.recorder.stream:
-            self.stop_recording()
-            
-        # Stop active threads
-        if hasattr(self, 'file_monitor') and self.file_monitor:
-            self.file_monitor.stop()
-            self.file_monitor.wait()
-            
-        if hasattr(self, 'report_generator') and self.report_generator:
-            self.report_generator.terminate()
-            self.report_generator.wait()
-            
-        # Terminate PyAudio
-        self.recorder.cleanup()
-        
-        # Clean up temporary files
-        try:
-            if os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir)
-        except Exception as e:
-            print(f"Error cleaning temporary files: {e}")
-            
-        event.accept()
