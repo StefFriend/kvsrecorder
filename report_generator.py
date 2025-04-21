@@ -17,6 +17,7 @@ import time
 import warnings
 from datetime import timedelta
 import sys
+import hashlib
 
 # Filter librosa warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -35,6 +36,15 @@ class ReportGeneratorThread(QThread):
         self.codec_sel = codec_sel
         self.bitrate_sel = bitrate_sel
         self.temp_dir = temp_dir
+        
+    def calculate_file_hash(self, file_path):
+        """Calculate SHA-256 hash of the audio file"""
+        hash_obj = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            # Read file in chunks of 4K
+            for chunk in iter(lambda: f.read(4096), b''):
+                hash_obj.update(chunk)
+        return hash_obj.hexdigest()
         
     def run(self):
         try:
@@ -58,6 +68,10 @@ class ReportGeneratorThread(QThread):
             # Setup warnings to handle deprecation notices
             warnings.filterwarnings("ignore", category=FutureWarning)
             warnings.filterwarnings("ignore", message="PySoundFile failed")
+            
+            # Calculate file hash
+            self.report_progress.emit("Calculating file hash...")
+            file_hash = self.calculate_file_hash(self.output_file)
             
             # Verify file is valid using ffprobe
             try:
@@ -223,11 +237,15 @@ class ReportGeneratorThread(QThread):
             
             # Format current time with milliseconds
             current_time = time.strftime("%d/%m/%Y %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
-            pdf.cell(50, 8, f"Report date:", 0)
+            pdf.cell(50, 8, f"Date:", 0)
             pdf.cell(0, 8, f"{current_time}", 0, 1)
             
             pdf.cell(50, 8, f"Duration:", 0)
             pdf.cell(0, 8, f"{duration_formatted}", 0, 1)
+            
+            # Add file hash
+            pdf.cell(50, 8, f"SHA-256 Hash:", 0)
+            pdf.cell(0, 8, f"{file_hash}", 0, 1)
             
             pdf.ln(5)
             pdf.set_font("Arial", "B", 12)
