@@ -11,6 +11,7 @@ import sys
 import hashlib
 import datetime
 
+
 def create_temp_directory(dir_path):
     """
     Create a temporary directory if it doesn't exist

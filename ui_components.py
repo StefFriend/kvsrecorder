@@ -45,6 +45,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         self.recording_start_time = 0
         self.temp_dir = "temp"
         self.last_recorded_file = None
+        self.last_recorded_file2 = None  # Second format recording
         
         # Create temporary directory
         if not os.path.exists(self.temp_dir):
@@ -179,6 +180,12 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         generate_report_action.triggered.connect(self.show_report_dialog)
         file_menu.addAction(generate_report_action)
         
+        # Play second format action
+        self.play_second_format_action = QAction("Play Second Format Recording", self)
+        self.play_second_format_action.triggered.connect(self.play_second_format)
+        self.play_second_format_action.setEnabled(False)
+        file_menu.addAction(self.play_second_format_action)
+        
         file_menu.addSeparator()
         
         # Exit action
@@ -235,6 +242,34 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         
         layout.addWidget(settings_group)
         
+        # Dual format settings
+        dual_group = QtWidgets.QGroupBox("Dual Format Recording")
+        dual_group.setCheckable(True)
+        dual_group.setChecked(False)
+        dual_layout = QtWidgets.QFormLayout(dual_group)
+        
+        self.format_sel2 = QtWidgets.QComboBox()
+        self.format_sel2.addItems(["wav", "mp3", "ogg", "flac", "m4a"])
+        self.format_sel2.currentIndexChanged.connect(self.update_codec_selection2)
+        
+        self.codec_sel2 = QtWidgets.QComboBox()
+        
+        self.bitrate_sel2 = QtWidgets.QComboBox()
+        self.bitrate_sel2.addItems(["128k", "192k", "256k", "320k"])
+        
+        dual_layout.addRow("Second Format:", self.format_sel2)
+        dual_layout.addRow("Second Codec:", self.codec_sel2)
+        dual_layout.addRow("Second Bitrate:", self.bitrate_sel2)
+        
+        # Set second format to different default (e.g., if first is wav, second is mp3)
+        self.format_sel2.setCurrentText("mp3")
+        self.update_codec_selection2()
+        
+        layout.addWidget(dual_group)
+        
+        # Store the dual format groupbox for checking its state
+        self.dual_format_group = dual_group
+        
         # Initialize codec menu based on selected format
         self.update_codec_selection()
 
@@ -252,7 +287,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         timer_layout = QtWidgets.QHBoxLayout()
         
         # Timer display
-        self.time_display = QtWidgets.QLabel("00:00:00")
+        self.time_display = QtWidgets.QLabel("00:00:00.000")
         self.time_display.setStyleSheet("font-size: 24px; font-weight: bold;")
         self.time_display.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         
@@ -409,9 +444,89 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             self.codec_sel.setCurrentText("flac")
             self.bitrate_sel.setEnabled(False)
         elif fmt == "m4a":
-            self.codec_sel.addItems(["aac"])
+            # First check if libfdk_aac is available (for HE-AAC support)
+            has_libfdk_aac = False
+            try:
+                codec_check = subprocess.run(
+                    ['ffmpeg', '-encoders'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    timeout=2
+                )
+                codec_output = codec_check.stdout.decode('utf-8')
+                has_libfdk_aac = "libfdk_aac" in codec_output
+            except Exception:
+                pass
+                
+            # Add codec options based on availability
+            codec_options = ["aac"]
+            if has_libfdk_aac:
+                codec_options.extend([
+                    "libfdk_aac (HE-AAC v1)", 
+                    "libfdk_aac (HE-AAC v2)"
+                ])
+                
+            self.codec_sel.addItems(codec_options)
             self.codec_sel.setCurrentText("aac")
             self.bitrate_sel.setEnabled(True)
+
+    def update_codec_selection2(self, index=None):
+        """Update codec options for second format based on selected format"""
+        self.codec_sel2.clear()
+        fmt = self.format_sel2.currentText()
+        
+        if fmt == "wav":
+            # Add bit depth information for each codec
+            self.codec_sel2.addItems([
+                "pcm_s16le (16-bit)", 
+                "pcm_s24le (24-bit)", 
+                "pcm_f32le (32-bit float)", 
+                "alaw (8-bit A-law)", 
+                "mulaw (8-bit μ-law)"
+            ])
+            self.codec_sel2.setCurrentText("pcm_s16le (16-bit)")
+            self.bitrate_sel2.setEnabled(False)
+                
+        elif fmt == "mp3":
+            self.codec_sel2.addItems(["libmp3lame"])
+            self.codec_sel2.setCurrentText("libmp3lame")
+            self.bitrate_sel2.setEnabled(True)
+        elif fmt == "ogg":
+            self.codec_sel2.addItems(["libvorbis", "libopus"])
+            self.codec_sel2.setCurrentText("libvorbis")
+            self.bitrate_sel2.setEnabled(True)
+        elif fmt == "flac":
+            self.codec_sel2.addItems(["flac"])
+            self.codec_sel2.setCurrentText("flac")
+            self.bitrate_sel2.setEnabled(False)
+        elif fmt == "m4a":
+            # First check if libfdk_aac is available (for HE-AAC support)
+            has_libfdk_aac = False
+            try:
+                codec_check = subprocess.run(
+                    ['ffmpeg', '-encoders'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    timeout=2
+                )
+                codec_output = codec_check.stdout.decode('utf-8')
+                has_libfdk_aac = "libfdk_aac" in codec_output
+            except Exception:
+                pass
+                
+            # Add codec options based on availability
+            codec_options = ["aac"]
+            if has_libfdk_aac:
+                codec_options.extend([
+                    "libfdk_aac (HE-AAC v1)", 
+                    "libfdk_aac (HE-AAC v2)"
+                ])
+                
+            self.codec_sel2.addItems(codec_options)
+            self.codec_sel2.setCurrentText("aac")
+            self.bitrate_sel2.setEnabled(True)
 
     def populate_input_devices(self):
         """Populate the input device dropdown with available devices"""
@@ -470,19 +585,36 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             if device_index is None and self.device_combo.count() > 0:
                 device_index = self.recorder.audio.get_device_info_by_index(0)["index"]
             
+            # Check if dual format recording is enabled
+            dual_format_enabled = self.dual_format_group.isChecked()
+            
             # Start the recorder
-            success = self.recorder.start_recording(
-                device_index,
-                self.output_path.text(),
-                self.format_sel,
-                self.codec_sel,
-                self.bitrate_sel,
-                self.sample_rate_sel.currentText()
-            )
+            if dual_format_enabled:
+                success = self.recorder.start_recording(
+                    device_index,
+                    self.output_path.text(),
+                    self.format_sel,
+                    self.codec_sel,
+                    self.bitrate_sel,
+                    self.sample_rate_sel.currentText(),
+                    self.format_sel2,   # Second format
+                    self.codec_sel2,    # Second codec
+                    self.bitrate_sel2   # Second bitrate
+                )
+            else:
+                success = self.recorder.start_recording(
+                    device_index,
+                    self.output_path.text(),
+                    self.format_sel,
+                    self.codec_sel,
+                    self.bitrate_sel,
+                    self.sample_rate_sel.currentText()
+                )
             
             if success or self.recorder.stream is not None:
                 # Store output file reference
                 self.last_recorded_file = self.recorder.output_file
+                self.last_recorded_file2 = self.recorder.output_file2 if dual_format_enabled else None
                 
                 # Start timers
                 self.recording_start_time = time.time()
@@ -501,9 +633,9 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 self.record_btn.setText("Stop Recording")
                 self.record_btn.setStyleSheet("background-color: #e63946; color: white; font-size: 16px; padding: 8px; border-radius: 4px;")
                 self.play_btn.setEnabled(False)
-                self.file_status.setText("Starting recording...")
+                self.file_status.setText("Starting recording..." + (" (dual format)" if dual_format_enabled else ""))
                 self.file_status.setStyleSheet("color: #FFC107; font-weight: bold;")  # Yellow
-                self.statusBar().showMessage("Recording in progress...")
+                self.statusBar().showMessage("Recording in progress..." + (" (dual format)" if dual_format_enabled else ""))
         
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Unable to start recording: {str(e)}")
@@ -512,6 +644,9 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
     def stop_recording(self):
         """Stop audio recording"""
         try:
+            # Check if dual format was being used
+            dual_format = hasattr(self.recorder, 'dual_format_enabled') and self.recorder.dual_format_enabled
+            
             # Stop timers
             self.timer.stop()
             self.time_timer.stop()
@@ -527,7 +662,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 self.file_monitor = None
             
             # Reset file status
-            self.file_status.setText("Processing...")
+            self.file_status.setText("Processing..." + (" (dual format)" if dual_format else ""))
             self.file_status.setStyleSheet("color: #1a73e8; font-weight: bold;")
             
             # Stop the recording
@@ -539,7 +674,15 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             
             if success:
                 self.play_btn.setEnabled(True)
-                self.statusBar().showMessage(f"Recording saved: {self.recorder.output_file}")
+                
+                # Enable the "Play Second Format" menu item if dual format was used
+                if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
+                    self.play_second_format_action.setEnabled(True)
+                
+                status_msg = f"Recording saved: {self.recorder.output_file}"
+                if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
+                    status_msg += f" and {self.recorder.output_file2}"
+                self.statusBar().showMessage(status_msg)
                 
                 # Ask if user wants to generate a report
                 reply = QtWidgets.QMessageBox.question(
@@ -552,13 +695,23 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 if reply == QtWidgets.QMessageBox.StandardButton.Yes:
                     # Start report generation in separate thread
                     self.start_report_generation(self.recorder.output_file)
+                    
+                    # If dual format was used, also generate report for second file
+                    if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                        QtWidgets.QMessageBox.information(
+                            self,
+                            "Dual Format Report",
+                            "A report will also be generated for the second format recording after the first one completes."
+                        )
+                        # Store second file to generate its report after the first one finishes
+                        self.second_report_file = self.recorder.output_file2
             else:
                 self.play_btn.setEnabled(False)
                 self.statusBar().showMessage("Error: Recording was not saved")
                 
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Warning", f"Problem stopping recording: {str(e)}")
-    
+
     def start_report_generation(self, audio_file=None):
         """Start report generation in a separate thread"""
         # Use provided file or last recorded file
@@ -651,7 +804,25 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             else:
                 size_str = f"{file_size_kb/1024:.1f} MB"
             
-            self.file_status.setText(f"Recording active: {size_str}")
+            # Check if dual format is enabled
+            dual_format = hasattr(self.recorder, 'dual_format_enabled') and self.recorder.dual_format_enabled
+            
+            # Update status with size information
+            if dual_format:
+                # For dual format, try to get the second file size
+                second_file_size = 0
+                if hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                    second_file_size = os.path.getsize(self.recorder.output_file2) / 1024
+                
+                # Format second file size
+                if second_file_size < 1024:
+                    size_str2 = f"{int(second_file_size)} KB"
+                else:
+                    size_str2 = f"{second_file_size/1024:.1f} MB"
+                
+                self.file_status.setText(f"Recording active: {size_str} + {size_str2}")
+            else:
+                self.file_status.setText(f"Recording active: {size_str}")
             
             # Change color based on file growth
             if file_size_kb > 0:
@@ -674,9 +845,23 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         if success:
             self.report_status.setText(f"Report saved: {message}")
             self.report_status.setStyleSheet("color: #4CAF50;")  # Green
+            
+            # Check if we need to generate a report for a second file
+            if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
+                second_file = self.second_report_file
+                self.second_report_file = None  # Clear the reference
+                # Start report generation for second file
+                self.start_report_generation(second_file)
         else:
             self.report_status.setText(f"Report error: {message}")
             self.report_status.setStyleSheet("color: #e63946;")  # Red
+            
+            # If there was a second file pending, try to generate its report anyway
+            if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
+                second_file = self.second_report_file
+                self.second_report_file = None  # Clear the reference
+                # Start report generation for second file
+                self.start_report_generation(second_file)
         
         # Hide message after 10 seconds
         QTimer.singleShot(10000, lambda: self.report_status.setText(""))
@@ -684,19 +869,55 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
     def play_recording(self):
         """Play the recorded audio file with default application"""
         try:
+            dual_format = hasattr(self, 'last_recorded_file2') and self.last_recorded_file2
+            
+            # Play primary recording
             if self.recorder.output_file and os.path.exists(self.recorder.output_file):
                 open_file_with_default_app(self.recorder.output_file)
                 # Also open the log file if it exists
                 if self.recorder.log_file and os.path.exists(self.recorder.log_file):
                     open_file_with_default_app(self.recorder.log_file)
+                    
+                # Open second recording if dual format was used
+                if self.recorder.dual_format_enabled and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                    open_file_with_default_app(self.recorder.output_file2)
+                    if self.recorder.log_file2 and os.path.exists(self.recorder.log_file2):
+                        open_file_with_default_app(self.recorder.log_file2)
+                    
             elif self.last_recorded_file and os.path.exists(self.last_recorded_file):
                 open_file_with_default_app(self.last_recorded_file)
                 # Try to open the corresponding log file
-                log_file = os.path.splitext(self.last_recorded_file)[0] + "_log"
+                log_file = os.path.splitext(self.last_recorded_file)[0] + "_log.txt"
                 if os.path.exists(log_file):
                     open_file_with_default_app(log_file)
+                    
+                # Open second recording if dual format was used
+                if dual_format and os.path.exists(self.last_recorded_file2):
+                    open_file_with_default_app(self.last_recorded_file2)
+                    log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log.txt"
+                    if os.path.exists(log_file2):
+                        open_file_with_default_app(log_file2)
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Error", f"Unable to play file: {str(e)}")
+
+    def play_second_format(self):
+        """Play the second format recording if it exists"""
+        try:
+            if hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                open_file_with_default_app(self.recorder.output_file2)
+                # Also open the second log file if it exists
+                if hasattr(self.recorder, 'log_file2') and self.recorder.log_file2 and os.path.exists(self.recorder.log_file2):
+                    open_file_with_default_app(self.recorder.log_file2)
+            elif hasattr(self, 'last_recorded_file2') and self.last_recorded_file2 and os.path.exists(self.last_recorded_file2):
+                open_file_with_default_app(self.last_recorded_file2)
+                # Try to open the corresponding log file
+                log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log.txt"
+                if os.path.exists(log_file2):
+                    open_file_with_default_app(log_file2)
+            else:
+                QtWidgets.QMessageBox.information(self, "Information", "No second format recording is available")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to play second format file: {str(e)}")
 
     def show_report_dialog(self):
         """Show dialog to select an audio file for report generation"""
@@ -721,9 +942,11 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             <p>Features:</p>
             <ul>
                 <li>High-quality audio recording with custom format selection</li>
+                <li>Dual format simultaneous recording</li>
                 <li>Real-time visualization</li>
                 <li>Detailed audio reports with waveform and spectrogram</li>
-                <li>Support for multiple audio formats and codecs</li>
+                <li>Support for multiple audio formats and codecs including HE-AAC</li>
+                <li>File integrity verification with SHA-256 hash</li>
             </ul>
             <p>Version 1.0</p>"""
         )
