@@ -675,8 +675,11 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             if success:
                 self.play_btn.setEnabled(True)
                 
-                # Enable the "Play Second Format" menu item if dual format was used
+                # Store output file references for later use
+                self.last_recorded_file = self.recorder.output_file
                 if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
+                    self.last_recorded_file2 = self.recorder.output_file2
+                    # Enable the "Play Second Format" menu item
                     self.play_second_format_action.setEnabled(True)
                 
                 status_msg = f"Recording saved: {self.recorder.output_file}"
@@ -696,7 +699,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                     # Start report generation in separate thread
                     self.start_report_generation(self.recorder.output_file)
                     
-                    # If dual format was used, also generate report for second file
+                    # If dual format was used, schedule the second report
                     if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
                         QtWidgets.QMessageBox.information(
                             self,
@@ -704,6 +707,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                             "A report will also be generated for the second format recording after the first one completes."
                         )
                         # Store second file to generate its report after the first one finishes
+                        print(f"Scheduling second report for: {self.recorder.output_file2}")
                         self.second_report_file = self.recorder.output_file2
             else:
                 self.play_btn.setEnabled(False)
@@ -853,8 +857,12 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 second_file = self.second_report_file
                 self.second_report_file = None  # Clear the reference
                 
-                # Force a brief delay to ensure the previous report is fully written
-                QtCore.QTimer.singleShot(1000, lambda: self.start_second_report(second_file))
+                # Print debug info
+                print(f"Starting second report for file: {second_file}")
+                
+                # Use QTimer.singleShot with lambda that explicitly captures the second_file variable
+                second_file_copy = second_file  # Make an explicit copy to avoid reference issues
+                QtCore.QTimer.singleShot(1500, lambda file=second_file_copy: self.start_second_report(file))
         else:
             self.report_status.setText(f"Report error: {message}")
             self.report_status.setStyleSheet("color: #e63946;")  # Red
@@ -863,11 +871,12 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
                 second_file = self.second_report_file
                 self.second_report_file = None  # Clear the reference
+                second_file_copy = second_file  # Make an explicit copy
                 # Start report generation for second file after a short delay
-                QtCore.QTimer.singleShot(1000, lambda: self.start_second_report(second_file))
+                QtCore.QTimer.singleShot(1500, lambda file=second_file_copy: self.start_second_report(file))
         
-        # Hide message after 10 seconds
-        QTimer.singleShot(10000, lambda: self.report_status.setText(""))
+        # Hide message after 15 seconds instead of 10
+        QTimer.singleShot(15000, lambda: self.report_status.setText(""))
         
     def start_second_report(self, file_path):
         """Start generation of the second report (for dual format)"""
@@ -876,19 +885,31 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             self.report_status.setStyleSheet("color: #e63946;")  # Red
             return
             
-        # Determine which format was used for the second file (usually format_sel2)
-        # For simplicity, we'll use format_sel2 and codec_sel2 directly
+        # Print debug info about file path and format
+        print(f"Starting second report for: {file_path}")
+        print(f"Format: {self.format_sel2.currentText()}, Codec: {self.codec_sel2.currentText()}")
+        
+        # Find the matching format for the file extension
+        file_ext = os.path.splitext(file_path)[1].lower()[1:]  # Get extension without dot
+        if self.format_sel2.currentText() != file_ext:
+            # If current format doesn't match file extension, find the right one
+            for i in range(self.format_sel2.count()):
+                if self.format_sel2.itemText(i) == file_ext:
+                    self.format_sel2.setCurrentIndex(i)
+                    break
+            
         self.report_status.setText("Preparing second format report...")
         self.report_progress_bar.setVisible(True)
         
-        # Create and start report thread for second file
-        self.report_generator = ReportGeneratorThread(
+        # Create and start report thread for second file with correct format settings
+        report_generator = ReportGeneratorThread(
             file_path, 
-            self.format_sel2,  # Use second format settings 
-            self.codec_sel2,   # Use second codec settings
-            self.bitrate_sel2, # Use second bitrate settings
+            self.format_sel2,    # Use second format settings 
+            self.codec_sel2,     # Use second codec settings
+            self.bitrate_sel2,   # Use second bitrate settings
             self.temp_dir
         )
+        self.report_generator = report_generator
         self.report_generator.report_progress.connect(self.handle_report_progress)
         self.report_generator.report_finished.connect(self.handle_report_finished)
         self.report_generator.start()
@@ -914,14 +935,14 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             elif self.last_recorded_file and os.path.exists(self.last_recorded_file):
                 open_file_with_default_app(self.last_recorded_file)
                 # Try to open the corresponding log file
-                log_file = os.path.splitext(self.last_recorded_file)[0] + "_log.txt"
+                log_file = os.path.splitext(self.last_recorded_file)[0] + "_log"
                 if os.path.exists(log_file):
                     open_file_with_default_app(log_file)
                     
                 # Open second recording if dual format was used
                 if dual_format and os.path.exists(self.last_recorded_file2):
                     open_file_with_default_app(self.last_recorded_file2)
-                    log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log.txt"
+                    log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log"
                     if os.path.exists(log_file2):
                         open_file_with_default_app(log_file2)
         except Exception as e:
