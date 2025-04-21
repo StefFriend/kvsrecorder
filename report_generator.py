@@ -1,13 +1,4 @@
-# Get file size information
-            file_size_str = "N/A"
-            if os.path.exists(self.output_file):
-                file_size_bytes = os.path.getsize(self.output_file)
-                if file_size_bytes < 1024:
-                    file_size_str = f"{file_size_bytes} B"
-                elif file_size_bytes < 1024 * 1024:
-                    file_size_str = f"{file_size_bytes / 1024:.2f} KB"
-                else:
-                    file_size_str = f"{file_size_bytes / (1024 * 1024):.2f} MB""""
+"""
 Report Generator Module
 
 Handles the generation of detailed audio reports including waveform visualizations,
@@ -81,6 +72,17 @@ class ReportGeneratorThread(QThread):
             # Calculate file hash
             self.report_progress.emit("Calculating file hash...")
             file_hash = self.calculate_file_hash(self.output_file)
+            
+            # Get file size information
+            file_size_str = "N/A"
+            if os.path.exists(self.output_file):
+                file_size_bytes = os.path.getsize(self.output_file)
+                if file_size_bytes < 1024:
+                    file_size_str = f"{file_size_bytes} B"
+                elif file_size_bytes < 1024 * 1024:
+                    file_size_str = f"{file_size_bytes / 1024:.2f} KB"
+                else:
+                    file_size_str = f"{file_size_bytes / (1024 * 1024):.2f} MB"
             
             # Verify file is valid using ffprobe
             try:

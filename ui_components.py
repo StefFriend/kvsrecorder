@@ -31,7 +31,7 @@ warnings.filterwarnings("ignore", message="amplitude_to_db was called on complex
 class AudioProAdvanced(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Audio Pro Advanced")
+        self.setWindowTitle("KVSrecorder")
         self.resize(900, 700)
         
         # Apply white and blue theme
@@ -839,6 +839,8 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         
     def handle_report_finished(self, success, message):
         """Handle report generation completion"""
+        # Store reference to the just-completed report
+        completed_report = self.report_generator
         self.report_generator = None
         self.report_progress_bar.setVisible(False)
         
@@ -850,8 +852,9 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
                 second_file = self.second_report_file
                 self.second_report_file = None  # Clear the reference
-                # Start report generation for second file
-                self.start_report_generation(second_file)
+                
+                # Force a brief delay to ensure the previous report is fully written
+                QtCore.QTimer.singleShot(1000, lambda: self.start_second_report(second_file))
         else:
             self.report_status.setText(f"Report error: {message}")
             self.report_status.setStyleSheet("color: #e63946;")  # Red
@@ -860,11 +863,35 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
                 second_file = self.second_report_file
                 self.second_report_file = None  # Clear the reference
-                # Start report generation for second file
-                self.start_report_generation(second_file)
+                # Start report generation for second file after a short delay
+                QtCore.QTimer.singleShot(1000, lambda: self.start_second_report(second_file))
         
         # Hide message after 10 seconds
         QTimer.singleShot(10000, lambda: self.report_status.setText(""))
+        
+    def start_second_report(self, file_path):
+        """Start generation of the second report (for dual format)"""
+        if not file_path or not os.path.exists(file_path):
+            self.report_status.setText("Error: Second format file not found")
+            self.report_status.setStyleSheet("color: #e63946;")  # Red
+            return
+            
+        # Determine which format was used for the second file (usually format_sel2)
+        # For simplicity, we'll use format_sel2 and codec_sel2 directly
+        self.report_status.setText("Preparing second format report...")
+        self.report_progress_bar.setVisible(True)
+        
+        # Create and start report thread for second file
+        self.report_generator = ReportGeneratorThread(
+            file_path, 
+            self.format_sel2,  # Use second format settings 
+            self.codec_sel2,   # Use second codec settings
+            self.bitrate_sel2, # Use second bitrate settings
+            self.temp_dir
+        )
+        self.report_generator.report_progress.connect(self.handle_report_progress)
+        self.report_generator.report_finished.connect(self.handle_report_finished)
+        self.report_generator.start()
 
     def play_recording(self):
         """Play the recorded audio file with default application"""
@@ -936,8 +963,8 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         """Show about dialog"""
         QtWidgets.QMessageBox.about(
             self,
-            "About Audio Pro Advanced",
-            """<h2>Audio Pro Advanced</h2>
+            "About KVSrecorder",
+            """<h2>KVSrecorder</h2>
             <p>A professional audio recording and analysis application.</p>
             <p>Features:</p>
             <ul>
