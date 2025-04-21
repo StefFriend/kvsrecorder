@@ -11,6 +11,13 @@ import sys
 import hashlib
 import datetime
 
+# Import the SOFTWARE_VERSION from ui_components
+try:
+    from ui_components import SOFTWARE_VERSION
+except ImportError:
+    # Fallback version if import fails
+    SOFTWARE_VERSION = "1.0.2"
+
 def create_temp_directory(dir_path):
     """
     Create a temporary directory if it doesn't exist
@@ -184,7 +191,7 @@ def calculate_file_hash(file_path, hash_type='sha256'):
     except Exception as e:
         return f"Error calculating hash: {str(e)}"
 
-def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_time, end_time=None, version="1.0"):
+def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_time, end_time=None):
     """
     Create a log file for a recording session
     
@@ -194,7 +201,7 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
         ffmpeg_command: The FFmpeg command used for recording
         start_time: Recording start time (datetime object)
         end_time: Recording end time (datetime object), or None if recording is in progress
-        version: Software version string
+        version: Software version string, defaults to imported SOFTWARE_VERSION
     
     Returns:
         bool: True if log was created successfully
@@ -240,9 +247,9 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
         else:
             ffmpeg_command_str = str(ffmpeg_command)
             
-        # Create log content - Make sure the version is used in all appropriate places
+        # Create log content
         log_content = f"""
-KVSrecorder {version} - RECORDING LOG
+KVSrecorder {SOFTWARE_VERSION} - RECORDING LOG
 ==================================
 
 File Information:
@@ -266,7 +273,7 @@ System Information:
 ----------------
 Platform: {sys.platform}
 Python Version: {sys.version}
-KVSrecorder Version: {version}
+KVSrecorder Version: {SOFTWARE_VERSION}
 Log Created: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]}
 """
         

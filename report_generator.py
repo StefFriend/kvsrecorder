@@ -19,6 +19,13 @@ from datetime import timedelta
 import sys
 import hashlib
 
+# Try to import SOFTWARE_VERSION from ui_components
+try:
+    from ui_components import SOFTWARE_VERSION
+except ImportError:
+    # Fallback version if import fails
+    SOFTWARE_VERSION = "1.0.2"
+
 # Filter librosa warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message="PySoundFile failed")
@@ -29,7 +36,7 @@ class ReportGeneratorThread(QThread):
     report_progress = pyqtSignal(str)
     report_finished = pyqtSignal(bool, str)
     
-    def __init__(self, output_file, format_sel, codec_sel, bitrate_sel, temp_dir, version="1.0"):
+    def __init__(self, output_file, format_sel, codec_sel, bitrate_sel, temp_dir, version=SOFTWARE_VERSION):
         super().__init__()
         self.output_file = output_file
         self.format_sel = format_sel
@@ -242,7 +249,7 @@ class ReportGeneratorThread(QThread):
             # Generate PDF with white and blue theme
             self.report_progress.emit("Creating PDF report...")
             class PDF(FPDF):
-                def __init__(self, version="1.0"):
+                def __init__(self, version=SOFTWARE_VERSION):
                     super().__init__()
                     self.version = version
                     
@@ -288,7 +295,7 @@ class ReportGeneratorThread(QThread):
             
             # Format current time with milliseconds
             current_time = time.strftime("%d/%m/%Y %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
-            pdf.cell(50, 8, f"Date:", 0)
+            pdf.cell(50, 8, f"Report date:", 0)
             pdf.cell(0, 8, f"{current_time}", 0, 1)
             
             pdf.cell(50, 8, f"Duration:", 0)
