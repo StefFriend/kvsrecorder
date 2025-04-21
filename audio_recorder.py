@@ -40,6 +40,9 @@ class AudioRecorder:
                         format_sel2=None, codec_sel2=None, bitrate_sel2=None):
         """Start recording audio with the specified settings"""
         try:
+            # Get software version from parent (UI)
+            software_version = getattr(self.parent, 'SOFTWARE_VERSION', "1.0")
+            
             # Check if dual format recording is enabled
             self.dual_format_enabled = format_sel2 is not None and codec_sel2 is not None
             
@@ -62,7 +65,7 @@ class AudioRecorder:
             
             bitrate = bitrate_sel.currentText()
             self.output_file = os.path.join(output_dir, f"{self.current_filename}.{fmt}")
-            self.log_file = os.path.join(output_dir, f"{self.current_filename}_log.txt")
+            self.log_file = os.path.join(output_dir, f"{self.current_filename}_log")
             
             # Setup second format if dual recording is enabled
             if self.dual_format_enabled:
@@ -71,7 +74,7 @@ class AudioRecorder:
                 codec2 = codec_full2.split(" ")[0] if " " in codec_full2 else codec_full2
                 bitrate2 = bitrate_sel2.currentText() if bitrate_sel2 else "256k"
                 self.output_file2 = os.path.join(output_dir, f"{self.current_filename}_2.{fmt2}")
-                self.log_file2 = os.path.join(output_dir, f"{self.current_filename}_2_log.txt")
+                self.log_file2 = os.path.join(output_dir, f"{self.current_filename}_2_log")
             
             # Prepare for recording
             self.frames.clear()
@@ -306,12 +309,14 @@ class AudioRecorder:
                                            frames_per_buffer=self.chunk,
                                            stream_callback=self.audio_callback)
 
-                # Create initial log file
+                # Create initial log file with software version
                 create_recording_log(
                     self.log_file,
                     self.output_file,
                     command,
-                    self.recording_start_datetime
+                    self.recording_start_datetime,
+                    None,  # No end time yet
+                    software_version  # Pass the software version
                 )
                 
                 # Create second log file if dual recording is enabled
@@ -320,7 +325,9 @@ class AudioRecorder:
                         self.log_file2,
                         self.output_file2,
                         command2,
-                        self.recording_start_datetime
+                        self.recording_start_datetime,
+                        None,  # No end time yet
+                        software_version  # Pass the software version
                     )
                 
                 # Start recording
@@ -381,6 +388,9 @@ class AudioRecorder:
     def stop_recording(self):
         """Stop recording and finalize the output file(s)"""
         try:
+            # Get software version from parent (UI)
+            software_version = getattr(self.parent, 'SOFTWARE_VERSION', "1.0")
+            
             # Record end time
             recording_end_datetime = datetime.datetime.now()
             
