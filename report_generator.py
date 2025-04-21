@@ -36,6 +36,7 @@ class ReportGeneratorThread(QThread):
         self.codec_sel = codec_sel
         self.bitrate_sel = bitrate_sel
         self.temp_dir = temp_dir
+        self.channels = 1  # Default to mono
         
     def calculate_file_hash(self, file_path):
         """Calculate SHA-256 hash of the audio file"""
@@ -206,6 +207,25 @@ class ReportGeneratorThread(QThread):
                         bitdepth = "32-bit"
                 except:
                     pass
+                    
+            # Get bitrate information - handle for all formats
+            bitrate_str = "N/A"
+            if self.bitrate_sel and self.bitrate_sel.isEnabled():
+                bitrate_str = self.bitrate_sel.currentText()
+            
+            # Some formats have implicit bitrates even when not shown in UI
+            fmt = os.path.splitext(self.output_file)[1][1:].lower()
+            if fmt == "wav":
+                if codec_base == "pcm_s16le":
+                    bitrate_str = f"{sr * 16 * self.channels / 1000} kbps"
+                elif codec_base == "pcm_s24le":
+                    bitrate_str = f"{sr * 24 * self.channels / 1000} kbps"
+                elif codec_base == "pcm_f32le":
+                    bitrate_str = f"{sr * 32 * self.channels / 1000} kbps"
+                elif codec_base in ["alaw", "mulaw"]:
+                    bitrate_str = f"{sr * 8 * self.channels / 1000} kbps"
+            elif fmt == "flac":
+                bitrate_str = "Variable (lossless)"
 
             # Generate PDF with white and blue theme
             self.report_progress.emit("Creating PDF report...")
@@ -279,7 +299,7 @@ class ReportGeneratorThread(QThread):
             pdf.cell(0, 8, f"{bitdepth}", 0, 1)
             
             pdf.cell(50, 8, f"Bitrate:", 0)
-            pdf.cell(0, 8, f"{self.bitrate_sel.currentText() if self.bitrate_sel.isEnabled() else 'N/A'}", 0, 1)
+            pdf.cell(0, 8, f"{bitrate_str}", 0, 1)
             
             pdf.cell(50, 8, f"Sample Rate:", 0)
             pdf.cell(0, 8, f"{sr} Hz", 0, 1)
