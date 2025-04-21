@@ -1,4 +1,13 @@
-"""
+# Get file size information
+            file_size_str = "N/A"
+            if os.path.exists(self.output_file):
+                file_size_bytes = os.path.getsize(self.output_file)
+                if file_size_bytes < 1024:
+                    file_size_str = f"{file_size_bytes} B"
+                elif file_size_bytes < 1024 * 1024:
+                    file_size_str = f"{file_size_bytes / 1024:.2f} KB"
+                else:
+                    file_size_str = f"{file_size_bytes / (1024 * 1024):.2f} MB""""
 Report Generator Module
 
 Handles the generation of detailed audio reports including waveform visualizations,
@@ -205,7 +214,7 @@ class ReportGeneratorThread(QThread):
                     # Title in blue
                     self.set_font('Arial', 'B', 18)
                     self.set_text_color(26, 115, 232)  # #1a73e8
-                    self.cell(0, 10, 'Audio Pro Advanced', 0, 1, 'C')
+                    self.cell(0, 10, 'KVSrecorder', 0, 1, 'C')
                     self.ln(10)
                 
                 def footer(self):
@@ -234,6 +243,10 @@ class ReportGeneratorThread(QThread):
             pdf.set_text_color(0, 0, 0)  # Black text
             pdf.cell(50, 8, f"File Name:", 0)
             pdf.cell(0, 8, f"{os.path.basename(self.output_file)}", 0, 1)
+            
+            # Add file size information
+            pdf.cell(50, 8, f"File Size:", 0)
+            pdf.cell(0, 8, f"{file_size_str}", 0, 1)
             
             # Format current time with milliseconds
             current_time = time.strftime("%d/%m/%Y %H:%M:%S.") + f"{int(time.time() * 1000) % 1000:03d}"
