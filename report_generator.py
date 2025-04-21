@@ -149,15 +149,22 @@ class ReportGeneratorThread(QThread):
             plt.grid(True, color='#e8f0fe', linestyle='-', linewidth=0.5)
             plt.savefig(waveform_path, bbox_inches='tight', facecolor='white')
 
-            # Generate spectrogram with green theme
+            # Generate spectrogram with green theme and proper frequency labeling
             self.report_progress.emit("Generating spectrogram...")
             plt.figure(figsize=(10, 4), facecolor='white')
             S = librosa.stft(audio)
             # Use np.abs to avoid warning on complex input
-            im = librosa.display.specshow(librosa.amplitude_to_db(np.abs(S), ref=np.max), 
-                                    sr=sr, y_axis='log', x_axis='time', cmap='Greens')  # Changed to green
+            im = librosa.display.specshow(
+                librosa.amplitude_to_db(np.abs(S), ref=np.max), 
+                sr=sr, 
+                y_axis='hz',  # Use 'hz' to properly label frequency on y-axis
+                x_axis='time', 
+                cmap='Greens'  # Changed to green
+            )
             plt.title("Complete Spectrogram", color='#1a73e8', fontweight='bold')
+            plt.ylabel("Frequency (Hz)", color='#1a73e8')  # Added y-axis label for clarity
             cbar = plt.colorbar(im, format="%+2.0f dB")
+            cbar.set_label('Amplitude (dB)', color='#1a73e8')  # Add label to colorbar
             cbar.ax.yaxis.label.set_color('#1a73e8')
             cbar.ax.tick_params(colors='#1a73e8')
             plt.savefig(spectrogram_path, bbox_inches='tight', facecolor='white')

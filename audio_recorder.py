@@ -41,10 +41,21 @@ class AudioRecorder:
         """Start recording audio with the specified settings"""
         try:
             # Get software version from parent (UI)
+            # Make sure to get the SOFTWARE_VERSION directly from the parent
+            # This ensures we're getting the exact version string defined in ui_components.py
             software_version = getattr(self.parent, 'SOFTWARE_VERSION', "1.0")
             
             # Check if dual format recording is enabled
             self.dual_format_enabled = format_sel2 is not None and codec_sel2 is not None
+
+            # Print the version for debugging
+            print(f"Starting recording with software version: {software_version}")
+            
+            # To confirm we're getting the right value from ui_components.py
+            if hasattr(self.parent, 'SOFTWARE_VERSION'):
+                print(f"Parent SOFTWARE_VERSION: {self.parent.SOFTWARE_VERSION}")
+            else:
+                print("Parent does not have SOFTWARE_VERSION attribute")
             
             # Reset error flags
             if hasattr(self, '_logged_write_error'):

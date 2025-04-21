@@ -240,7 +240,7 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
         else:
             ffmpeg_command_str = str(ffmpeg_command)
             
-        # Create log content
+        # Create log content - Make sure the version is used in all appropriate places
         log_content = f"""
 KVSrecorder {version} - RECORDING LOG
 ==================================
