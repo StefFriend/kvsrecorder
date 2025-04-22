@@ -725,7 +725,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 self.current_level = 0
                 
             # Print debug info
-            print(f"Peak: {peak:.2f}, Level: {self.current_level:.1f}%, dB: {20 * np.log10(max(1, peak) / 32767):.1f}")
+            #print(f"Peak: {peak:.2f}, Level: {self.current_level:.1f}%, dB: {20 * np.log10(max(1, peak) / 32767):.1f}")
             
             # Request a repaint of the level meter
             self.level_meter_widget.update()
