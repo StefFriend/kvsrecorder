@@ -70,16 +70,27 @@ python main.py
 - **Sample Rates**: 8kHz, 44.1kHz, 48kHz, 96kHz
 - **Bitrates**: 128k, 192k, 256k, 320k (for lossy formats)
 
-### Report Generation
+### Recording Logs and Reports
 
-KVSrecorder generates comprehensive PDF reports that include:
+## Automated Log Files
 
-- Complete audio file information and metadata
-- Recording date, time, and duration
-- File hash for integrity verification
-- Technical specifications (format, codec, bit depth, etc.)
-- Audio analysis metrics (RMS, peak, dynamic range)
-- Waveform visualization and spectrogram
+KVSrecorder automatically creates detailed log files for each recording session. These logs provide an audit trail that includes:
+  - Recording start and end times with millisecond precision
+  - Complete FFmpeg command used for encoding
+  - File path and file size information
+  - SHA-256 hash of the audio file for integrity verification
+  - System information and software version
+  - Duration and technical specifications
+These logs are created in real-time during recording, updated when recording stops, and stored alongside the audio files. For dual-format recordings, separate log files are maintained for each format, ensuring complete documentation of the entire recording chain.
+
+## PDF Reports
+In addition to log files, KVSrecorder can generate comprehensive PDF reports that include:
+  - Complete audio file information and metadata
+  - Recording date, time, and duration
+  - File hash for integrity verification
+  - Technical specifications (format, codec, bit depth, etc.)
+  - Audio analysis metrics (RMS, peak, dynamic range)
+  - Waveform visualization and spectrogram
 
 ## License
 
