@@ -10,6 +10,9 @@ import subprocess
 import numpy as np
 import librosa
 import librosa.display
+import matplotlib
+# Use Agg backend to avoid GUI issues in threads
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from PyQt6.QtCore import QThread, pyqtSignal
 from fpdf import FPDF
@@ -86,67 +89,36 @@ class ReportGeneratorThread(QThread):
                 else:
                     file_size_str = f"{file_size_bytes / (1024 * 1024):.2f} MB"
             
-            # Verify file is valid using ffprobe
-            try:
-                self.report_progress.emit("Verifying audio file...")
-                probe_cmd = [
-                    'ffprobe', 
-                    '-v', 'error', 
-                    '-show_entries', 'format=duration', 
-                    '-of', 'default=noprint_wrappers=1:nokey=1', 
-                    self.output_file
-                ]
-                
-                result = subprocess.run(
-                    probe_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                    timeout=5
-                )
-                
-                # If ffprobe can't read the file, it will raise an error
-                # Otherwise it will return the duration
-                probe_duration = result.stdout.decode('utf-8').strip()
-                if not probe_duration or float(probe_duration) <= 0:
-                    self.report_finished.emit(False, "Invalid or empty audio file")
-                    return
-                    
-            except Exception as e:
-                self.report_finished.emit(False, f"Unable to verify audio file: {str(e)}")
-                return
-            
-            # Load audio
+            # Load audio - process the full file regardless of size
             self.report_progress.emit("Loading audio for analysis...")
             try:
                 # Check if file exists before loading
                 if os.path.isfile(self.output_file):
-                    # Try to use SoundFile directly if available
-                    try:
-                        import soundfile as sf
-                        audio, sr = sf.read(self.output_file)
-                    except (ImportError, Exception) as sf_error:
-                        # If it fails, use librosa with warnings handling
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            audio, sr = librosa.load(self.output_file, sr=None)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        audio, sr = librosa.load(self.output_file, sr=None)
                 else:
                     self.report_finished.emit(False, f"Audio file not found: {self.output_file}")
                     return
             except Exception as e:
                 self.report_finished.emit(False, f"Unable to analyze audio file: {str(e)}")
                 return
+                
+            # Calculate duration from the loaded audio
+            duration = len(audio) / sr
 
             # Generate waveform with green theme
             self.report_progress.emit("Generating waveform...")
             plt.figure(figsize=(10, 4), facecolor='white')
             librosa.display.waveshow(audio, sr=sr, color='#4CAF50')  # Changed to green
             plt.title("Waveform", color='#1a73e8', fontweight='bold')
+            plt.xlabel("Time (s/m:s)", color='#1a73e8')
             plt.grid(True, color='#e8f0fe', linestyle='-', linewidth=0.5)
+            plt.tight_layout()
             plt.savefig(waveform_path, bbox_inches='tight', facecolor='white')
             plt.close()
 
-            # Generate spectrogram with green theme and proper frequency axis labels
+            # Generate spectrogram with proper Hz labeling
             self.report_progress.emit("Generating spectrogram...")
             plt.figure(figsize=(10, 4), facecolor='white')
             S = librosa.stft(audio)
@@ -161,19 +133,19 @@ class ReportGeneratorThread(QThread):
             )
             
             plt.title("Spectrogram", color='#1a73e8', fontweight='bold')
+            plt.xlabel("Time (s/m:s)", color='#1a73e8')
             plt.ylabel("Frequency (Hz)", color='#1a73e8')
-            plt.xlabel("Time (s)", color='#1a73e8')
             
             cbar = plt.colorbar(im, format="%+2.0f dB")
             cbar.set_label('Amplitude (dB)', color='#1a73e8')
             cbar.ax.yaxis.label.set_color('#1a73e8')
             cbar.ax.tick_params(colors='#1a73e8')
+            plt.tight_layout()
             plt.savefig(spectrogram_path, bbox_inches='tight', facecolor='white')
             plt.close('all')
 
             # Calculate audio statistics
             self.report_progress.emit("Calculating audio statistics...")
-            duration = len(audio) / sr
             rms = np.sqrt(np.mean(audio**2))
             peak = np.abs(audio).max()
             dynamic_range = 20 * np.log10(peak / (np.mean(np.abs(audio)) + 1e-10))
@@ -260,7 +232,7 @@ class ReportGeneratorThread(QThread):
             # Report header
             pdf.set_font("Arial", "B", 16)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
-            pdf.cell(0, 10, "Audio Report", ln=True, align='C')
+            pdf.cell(0, 10, "Complete Audio Report", ln=True, align='C')
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(5)
             
@@ -341,16 +313,20 @@ class ReportGeneratorThread(QThread):
             pdf.add_page()
             pdf.set_font("Arial", "B", 14)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
-            #pdf.cell(0, 10, "Spectrogram", ln=True)
+            #pdf.cell(0, 10, "Spectrogram (Frequency in Hz)", ln=True)
             pdf.image(spectrogram_path, w=180)
             
             self.report_progress.emit("Saving report...")
             pdf.output(pdf_path)
             
-            # Removed automatic opening of the report file as requested
-            
             # Signal successful completion
             self.report_finished.emit(True, pdf_path)
                     
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.report_finished.emit(False, f"Error generating report: {str(e)}")
+            
+    def __del__(self):
+        # Ensure clean shutdown
+        self.wait()
