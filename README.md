@@ -81,14 +81,6 @@ KVSrecorder generates comprehensive PDF reports that include:
 - Audio analysis metrics (RMS, peak, dynamic range)
 - Waveform visualization and spectrogram
 
-## Core Components
-
-- **UI Components**: Main application window and interface elements
-- **Audio Recorder**: Handles recording functionality via PyAudio and FFmpeg
-- **Report Generator**: Creates detailed PDF reports with visualizations
-- **File Monitor**: Tracks recording status and file growth
-- **Utilities**: Hash calculation, file handling, and time formatting
-
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (GNU GPLv3) - see the LICENSE file for details.
