@@ -1022,7 +1022,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         height = self.level_meter_widget.height()
         
         # Draw background
-        painter.fillRect(0, 0, width, height, QtGui.QColor('#212121'))  # Dark gray background
+        painter.fillRect(0, 0, width, height, QtGui.QColor('#FFFFFF'))  # Dark gray background
         
         # Calculate the level height (inverted - 0 at top, 100 at bottom)
         level_height = int(height * (1 - self.current_level / 100))
@@ -1046,7 +1046,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             painter.fillRect(0, green_start, width, green_height, QtGui.QColor('#44FF44'))  # Green
         
         # Draw tick marks for reference
-        pen = QtGui.QPen(QtGui.QColor('#FFFFFF'))
+        pen = QtGui.QPen(QtGui.QColor('#000000'))
         pen.setWidth(1)
         painter.setPen(pen)
         
