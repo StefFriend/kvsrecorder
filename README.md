@@ -70,9 +70,9 @@ python main.py
 - **Sample Rates**: 8kHz, 44.1kHz, 48kHz, 96kHz
 - **Bitrates**: 128k, 192k, 256k, 320k (for lossy formats)
 
-### Recording Logs and Reports
+## Recording Logs and Reports
 
-## Automated Log Files
+### Automated Log Files
 
 KVSrecorder automatically creates detailed log files for each recording session. These logs provide an audit trail that includes:
   - Recording start and end times with millisecond precision
@@ -83,7 +83,7 @@ KVSrecorder automatically creates detailed log files for each recording session.
   - Duration and technical specifications
 These logs are created in real-time during recording, updated when recording stops, and stored alongside the audio files. For dual-format recordings, separate log files are maintained for each format, ensuring complete documentation of the entire recording chain.
 
-## PDF Reports
+### PDF Reports
 In addition to log files, KVSrecorder can generate comprehensive PDF reports that include:
   - Complete audio file information and metadata
   - Recording date, time, and duration
