@@ -14,6 +14,7 @@ import matplotlib
 # Use Agg backend to avoid GUI issues in threads
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 from PyQt6.QtCore import QThread, pyqtSignal
 from fpdf import FPDF
 import time
@@ -51,6 +52,18 @@ class ReportGeneratorThread(QThread):
                 hash_obj.update(chunk)
         return hash_obj.hexdigest()
         
+    def format_time_axis(self, duration):
+        """Format time axis labels based on total duration"""
+        if duration < 60:  # Less than a minute
+            # Use seconds.milliseconds format
+            return "Time (seconds)"
+        elif duration < 3600:  # Less than an hour
+            # Use minutes:seconds format
+            return "Time (minutes:seconds)"
+        else:  # Hours or more
+            # Use hours:minutes:seconds format
+            return "Time (hours:minutes:seconds)"
+    
     def run(self):
         try:
             self.report_progress.emit("Starting report generation...")
@@ -67,8 +80,7 @@ class ReportGeneratorThread(QThread):
             if not os.path.exists(self.temp_dir):
                 os.makedirs(self.temp_dir)
                 
-            waveform_path = os.path.join(self.temp_dir, 'final_waveform.png')
-            spectrogram_path = os.path.join(self.temp_dir, 'final_spectrogram.png')
+            viz_path = os.path.join(self.temp_dir, 'audio_visualization.png')
             
             # Setup warnings to handle deprecation notices
             warnings.filterwarnings("ignore", category=FutureWarning)
@@ -106,42 +118,80 @@ class ReportGeneratorThread(QThread):
                 
             # Calculate duration from the loaded audio
             duration = len(audio) / sr
-
-            # Generate waveform with green theme
-            self.report_progress.emit("Generating waveform...")
-            plt.figure(figsize=(10, 4), facecolor='white')
-            librosa.display.waveshow(audio, sr=sr, color='#4CAF50')  # Changed to green
-            plt.title("Waveform", color='#1a73e8', fontweight='bold')
-            plt.xlabel("Time (s/m:s)", color='#1a73e8')
-            plt.grid(True, color='#e8f0fe', linestyle='-', linewidth=0.5)
-            plt.tight_layout()
-            plt.savefig(waveform_path, bbox_inches='tight', facecolor='white')
-            plt.close()
-
-            # Generate spectrogram with proper Hz labeling
-            self.report_progress.emit("Generating spectrogram...")
-            plt.figure(figsize=(10, 4), facecolor='white')
-            S = librosa.stft(audio)
             
-            # Use np.abs to avoid warning on complex input
-            im = librosa.display.specshow(
-                librosa.amplitude_to_db(np.abs(S), ref=np.max), 
-                sr=sr, 
-                y_axis='hz',  # Changed from 'log' to 'hz' to show frequency in Hz
-                x_axis='time', 
+            # Create a function for time formatting based on duration
+            def format_time(x, pos):
+                seconds = int(x)
+                if duration < 60:  # Less than a minute
+                    ms = int((x - seconds) * 1000)
+                    return f"{seconds}.{ms:03d}"
+                elif duration < 3600:  # Less than an hour
+                    minutes = seconds // 60
+                    seconds = seconds % 60
+                    return f"{minutes}:{seconds:02d}"
+                else:  # Hours or more
+                    hours = seconds // 3600
+                    minutes = (seconds % 3600) // 60
+                    seconds = seconds % 60
+                    return f"{hours}:{minutes:02d}:{seconds:02d}"
+            
+            # Format time axis label based on duration
+            time_label = self.format_time_axis(duration)
+            
+            # Generate visualization with perfectly matching widths
+            self.report_progress.emit("Generating visualizations...")
+            
+            # Create a figure with specific subplot grid
+            fig = plt.figure(figsize=(10, 7), dpi=150)
+            
+            # Main title for the visualization
+            #fig.suptitle("Audio Visualization", fontsize=16, fontweight='bold', color='#1a73e8')
+            
+            # Create a GridSpec layout with 2 rows and 1 column
+            from matplotlib import gridspec
+            gs = gridspec.GridSpec(2, 1, height_ratios=[1, 1], hspace=0.5)
+            
+            # Create waveform plot in the first row
+            ax1 = plt.subplot(gs[0])
+            librosa.display.waveshow(audio, sr=sr, ax=ax1, color='#4CAF50')
+            ax1.set_title("Waveform", color='#1a73e8', fontweight='bold')
+            ax1.set_xlabel(time_label, color='#1a73e8')
+            ax1.set_ylabel("Amplitude", color='#1a73e8')
+            ax1.set_xlim(0, duration)
+            ax1.grid(True, color='#e8f0fe', linestyle='-', linewidth=0.5)
+            
+            # Create spectrogram plot in the second row
+            ax2 = plt.subplot(gs[1])
+            S = librosa.stft(audio)
+            spec_img = librosa.display.specshow(
+                librosa.amplitude_to_db(np.abs(S), ref=np.max),
+                sr=sr,
+                y_axis='hz',
+                x_axis='time',
+                ax=ax2,
                 cmap='Greens'
             )
             
-            plt.title("Spectrogram", color='#1a73e8', fontweight='bold')
-            plt.xlabel("Time (s/m:s)", color='#1a73e8')
-            plt.ylabel("Frequency (Hz)", color='#1a73e8')
+            ax2.set_title("Spectrogram", color='#1a73e8', fontweight='bold')
+            ax2.set_xlabel(time_label, color='#1a73e8')
+            ax2.set_ylabel("Frequency (Hz)", color='#1a73e8')
+            ax2.set_xlim(0, duration)  # Match x-axis limits with waveform
+            #ax2.xaxis.set_major_formatter(FuncFormatter(format_time))
             
-            cbar = plt.colorbar(im, format="%+2.0f dB")
+            # Add colorbar to spectrogram
+            cbar = fig.colorbar(spec_img, ax=ax2, format="%+2.0f dB")
             cbar.set_label('Amplitude (dB)', color='#1a73e8')
             cbar.ax.yaxis.label.set_color('#1a73e8')
             cbar.ax.tick_params(colors='#1a73e8')
-            plt.tight_layout()
-            plt.savefig(spectrogram_path, bbox_inches='tight', facecolor='white')
+            
+            # Critical: After adding colorbar, make the waveform axes match the spectrogram's width
+            # This is done by getting the position of both axes and adjusting the first one
+            pos_spectro = ax2.get_position()
+            pos_wave = ax1.get_position()
+            ax1.set_position([pos_wave.x0, pos_wave.y0, pos_spectro.width, pos_wave.height])
+            
+            plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
+            plt.savefig(viz_path, bbox_inches='tight', facecolor='white')
             plt.close('all')
 
             # Calculate audio statistics
@@ -211,8 +261,6 @@ class ReportGeneratorThread(QThread):
             self.report_progress.emit("Creating PDF report...")
             class PDF(FPDF):
                 def header(self):
-                    # Logo (if available)
-                    # self.image('logo.png', 10, 8, 33)
                     # Title in blue
                     self.set_font('Arial', 'B', 18)
                     self.set_text_color(26, 115, 232)  # #1a73e8
@@ -305,16 +353,9 @@ class ReportGeneratorThread(QThread):
             pdf.cell(0, 8, f"{dynamic_range:.2f} dB", 0, 1)
             
             pdf.add_page()
-            pdf.set_font("Arial", "B", 14)
-            pdf.set_text_color(26, 115, 232)  # #1a73e8
-            #pdf.cell(0, 10, "Waveform", ln=True)
-            pdf.image(waveform_path, w=180)
             
-            pdf.add_page()
-            pdf.set_font("Arial", "B", 14)
-            pdf.set_text_color(26, 115, 232)  # #1a73e8
-            #pdf.cell(0, 10, "Spectrogram (Frequency in Hz)", ln=True)
-            pdf.image(spectrogram_path, w=180)
+            # Add visualization - no need for additional title
+            pdf.image(viz_path, x=10, y=30, w=190)
             
             self.report_progress.emit("Saving report...")
             pdf.output(pdf_path)
