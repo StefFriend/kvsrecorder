@@ -12,7 +12,7 @@ import pyaudio
 import numpy as np
 from PyQt6 import QtWidgets
 import datetime
-from utils import calculate_file_hash, create_recording_log, update_recording_log
+from utils import calculate_file_hash, create_recording_log, update_recording_log, APP_VERSION
 
 class AudioRecorder:
     def __init__(self, parent):
@@ -40,22 +40,8 @@ class AudioRecorder:
                         format_sel2=None, codec_sel2=None, bitrate_sel2=None):
         """Start recording audio with the specified settings"""
         try:
-            # Get software version from parent (UI)
-            # Make sure to get the SOFTWARE_VERSION directly from the parent
-            # This ensures we're getting the exact version string defined in ui_components.py
-            software_version = getattr(self.parent, 'SOFTWARE_VERSION', "1.0")
-            
             # Check if dual format recording is enabled
             self.dual_format_enabled = format_sel2 is not None and codec_sel2 is not None
-
-            # Print the version for debugging
-            print(f"Starting recording with software version: {software_version}")
-            
-            # To confirm we're getting the right value from ui_components.py
-            if hasattr(self.parent, 'SOFTWARE_VERSION'):
-                print(f"Parent SOFTWARE_VERSION: {self.parent.SOFTWARE_VERSION}")
-            else:
-                print("Parent does not have SOFTWARE_VERSION attribute")
             
             # Reset error flags
             if hasattr(self, '_logged_write_error'):
@@ -211,29 +197,8 @@ class AudioRecorder:
             elif fmt == "flac":
                 command.extend(['-c:a', codec, '-compression_level', '8'])  # Maximum compression
             elif fmt == "m4a":
-                if "libfdk_aac" in codec:
-                    # Configure HE-AAC based on version
-                    base_codec = codec.split(" ")[0]
-                    if "v1" in codec_full:
-                        # HE-AAC v1
-                        command.extend([
-                            '-c:a', base_codec,
-                            '-profile:a', 'aac_he',  # HE-AAC v1 profile
-                            '-b:a', bitrate
-                        ])
-                    elif "v2" in codec_full:
-                        # HE-AAC v2
-                        command.extend([
-                            '-c:a', base_codec,
-                            '-profile:a', 'aac_he_v2',  # HE-AAC v2 profile
-                            '-b:a', bitrate
-                        ])
-                    else:
-                        # Standard AAC with libfdk_aac
-                        command.extend(['-c:a', base_codec, '-b:a', bitrate])
-                else:
-                    # Standard AAC
-                    command.extend(['-c:a', codec, '-b:a', bitrate, '-strict', 'experimental'])
+                # Standard AAC (removed HE-AAC options)
+                command.extend(['-c:a', codec, '-b:a', bitrate, '-strict', 'experimental'])
             
             # Add output file
             command.append(self.output_file)
@@ -264,25 +229,8 @@ class AudioRecorder:
                 elif fmt2 == "flac":
                     command2.extend(['-c:a', codec2, '-compression_level', '8'])
                 elif fmt2 == "m4a":
-                    if "libfdk_aac" in codec2:
-                        # Configure HE-AAC based on version
-                        base_codec2 = codec2.split(" ")[0]
-                        if "v1" in codec_full2:
-                            command2.extend([
-                                '-c:a', base_codec2,
-                                '-profile:a', 'aac_he',
-                                '-b:a', bitrate2
-                            ])
-                        elif "v2" in codec_full2:
-                            command2.extend([
-                                '-c:a', base_codec2,
-                                '-profile:a', 'aac_he_v2',
-                                '-b:a', bitrate2
-                            ])
-                        else:
-                            command2.extend(['-c:a', base_codec2, '-b:a', bitrate2])
-                    else:
-                        command2.extend(['-c:a', codec2, '-b:a', bitrate2, '-strict', 'experimental'])
+                    # Standard AAC (removed HE-AAC options)
+                    command2.extend(['-c:a', codec2, '-b:a', bitrate2, '-strict', 'experimental'])
                 
                 # Add second output file
                 command2.append(self.output_file2)
@@ -320,14 +268,12 @@ class AudioRecorder:
                                            frames_per_buffer=self.chunk,
                                            stream_callback=self.audio_callback)
 
-                # Create initial log file with software version
+                # Create initial log file
                 create_recording_log(
                     self.log_file,
                     self.output_file,
                     command,
-                    self.recording_start_datetime,
-                    None,  # No end time yet
-                    software_version  # Pass the software version
+                    self.recording_start_datetime
                 )
                 
                 # Create second log file if dual recording is enabled
@@ -336,9 +282,7 @@ class AudioRecorder:
                         self.log_file2,
                         self.output_file2,
                         command2,
-                        self.recording_start_datetime,
-                        None,  # No end time yet
-                        software_version  # Pass the software version
+                        self.recording_start_datetime
                     )
                 
                 # Start recording
@@ -399,9 +343,6 @@ class AudioRecorder:
     def stop_recording(self):
         """Stop recording and finalize the output file(s)"""
         try:
-            # Get software version from parent (UI)
-            software_version = getattr(self.parent, 'SOFTWARE_VERSION', "1.0")
-            
             # Record end time
             recording_end_datetime = datetime.datetime.now()
             

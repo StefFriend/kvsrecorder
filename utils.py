@@ -11,12 +11,8 @@ import sys
 import hashlib
 import datetime
 
-# Import the SOFTWARE_VERSION from ui_components
-try:
-    from ui_components import SOFTWARE_VERSION
-except ImportError:
-    # Fallback version if import fails
-    SOFTWARE_VERSION = "1.0.2"
+# Define application version - used consistently across the application
+APP_VERSION = "1.0.1"
 
 def create_temp_directory(dir_path):
     """
@@ -79,6 +75,31 @@ def open_file_with_default_app(file_path):
         return True
     except Exception as e:
         print(f"Error opening file: {e}")
+        return False
+
+def open_directory(directory_path):
+    """
+    Open a directory with the system's file explorer
+    
+    Args:
+        directory_path: Path to the directory to open
+        
+    Returns:
+        bool: True if operation was successful
+    """
+    try:
+        if not os.path.exists(directory_path):
+            return False
+            
+        if sys.platform == 'win32':
+            os.startfile(directory_path)
+        elif sys.platform == 'darwin':  # macOS
+            subprocess.run(['open', directory_path])
+        else:  # Linux
+            subprocess.run(['xdg-open', directory_path])
+        return True
+    except Exception as e:
+        print(f"Error opening directory: {e}")
         return False
 
 def format_time(seconds, include_milliseconds=True):
@@ -201,7 +222,6 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
         ffmpeg_command: The FFmpeg command used for recording
         start_time: Recording start time (datetime object)
         end_time: Recording end time (datetime object), or None if recording is in progress
-        version: Software version string, defaults to imported SOFTWARE_VERSION
     
     Returns:
         bool: True if log was created successfully
@@ -249,7 +269,7 @@ def create_recording_log(log_file_path, audio_file_path, ffmpeg_command, start_t
             
         # Create log content
         log_content = f"""
-KVSrecorder {SOFTWARE_VERSION} - RECORDING LOG
+KVSrecorder v{APP_VERSION} - RECORDING LOG
 ==================================
 
 File Information:
@@ -273,7 +293,7 @@ System Information:
 ----------------
 Platform: {sys.platform}
 Python Version: {sys.version}
-KVSrecorder Version: {SOFTWARE_VERSION}
+Software Version: {APP_VERSION}
 Log Created: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]}
 """
         

@@ -1,5 +1,5 @@
 """
-KVSrecorder - Main Application Entry Point
+Audio Pro Advanced - Main Application Entry Point
 
 A professional audio recording and analysis application with advanced features
 including waveform visualization, spectrograms, and detailed audio reports.
@@ -8,7 +8,7 @@ including waveform visualization, spectrograms, and detailed audio reports.
 import sys
 import os
 from PyQt6 import QtWidgets, QtGui
-
+from utils import APP_VERSION
 from ui_components import AudioProAdvanced
 
 if __name__ == '__main__':

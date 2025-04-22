@@ -21,21 +21,18 @@ from PyQt6.QtCore import QTimer
 from audio_recorder import AudioRecorder
 from report_generator import ReportGeneratorThread
 from file_monitor import FileMonitorThread
-from utils import create_temp_directory, clean_temp_directory, open_file_with_default_app, format_time
+from utils import create_temp_directory, clean_temp_directory, open_directory, format_time, APP_VERSION
 
 # Filter librosa warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message="PySoundFile failed")
 warnings.filterwarnings("ignore", message="amplitude_to_db was called on complex input")
 
-# Software version - easy to modify in one place
-SOFTWARE_VERSION = "1.0.2"
-
 class AudioProAdvanced(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"KVSrecorder {SOFTWARE_VERSION}")
-        self.resize(900, 700)
+        self.setWindowTitle(f"KVSrecorder v{APP_VERSION}")
+        self.resize(800, 650)  # Made more compact horizontally
         
         # Apply white and blue theme
         self.apply_white_blue_theme()
@@ -61,6 +58,10 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         except ImportError:
             self.has_soundfile = False
             print("SoundFile not found. Will use audioread to load audio files.")
+
+        # Report generation queue
+        self.report_queue = []
+        self.is_report_processing = False
 
         self.setup_ui()
         self.populate_input_devices()
@@ -184,8 +185,8 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         file_menu.addAction(generate_report_action)
         
         # Play second format action
-        self.play_second_format_action = QAction("Play Second Format Recording", self)
-        self.play_second_format_action.triggered.connect(self.play_second_format)
+        self.play_second_format_action = QAction("Open Second Format Recording Folder", self)
+        self.play_second_format_action.triggered.connect(self.open_second_format_folder)
         self.play_second_format_action.setEnabled(False)
         file_menu.addAction(self.play_second_format_action)
         
@@ -208,13 +209,14 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         """Setup the user interface"""
         central_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(central_widget)
+        layout.setContentsMargins(8, 8, 8, 8)  # Make UI more compact
 
         # Input device selection
         device_layout = QtWidgets.QHBoxLayout()
         device_label = QtWidgets.QLabel("Input Device:")
         self.device_combo = QtWidgets.QComboBox()
         device_layout.addWidget(device_label)
-        device_layout.addWidget(self.device_combo)
+        device_layout.addWidget(self.device_combo, 1)  # Give it stretch factor to make UI more compact
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.clicked.connect(self.populate_input_devices)
         device_layout.addWidget(refresh_btn)
@@ -222,7 +224,10 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
 
         # Advanced audio settings
         settings_group = QtWidgets.QGroupBox("Audio Settings")
+        settings_group.setMaximumHeight(170)  # Make more compact
         form_layout = QtWidgets.QFormLayout(settings_group)
+        form_layout.setContentsMargins(8, 12, 8, 8)  # Make UI more compact
+        form_layout.setVerticalSpacing(6)  # Reduce vertical spacing
         
         self.format_sel = QtWidgets.QComboBox()
         self.format_sel.addItems(["wav", "mp3", "ogg", "flac", "m4a"])
@@ -249,7 +254,10 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         dual_group = QtWidgets.QGroupBox("Dual Format Recording")
         dual_group.setCheckable(True)
         dual_group.setChecked(False)
+        dual_group.setMaximumHeight(140)  # Make more compact
         dual_layout = QtWidgets.QFormLayout(dual_group)
+        dual_layout.setContentsMargins(8, 12, 8, 8)  # Make UI more compact
+        dual_layout.setVerticalSpacing(6)  # Reduce vertical spacing
         
         self.format_sel2 = QtWidgets.QComboBox()
         self.format_sel2.addItems(["wav", "mp3", "ogg", "flac", "m4a"])
@@ -282,7 +290,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         browse_btn = QtWidgets.QPushButton("Browse")
         browse_btn.clicked.connect(self.browse_output_folder)
         output_layout.addWidget(QtWidgets.QLabel("Save to:"))
-        output_layout.addWidget(self.output_path)
+        output_layout.addWidget(self.output_path, 1)  # Give it stretch factor to make UI more compact
         output_layout.addWidget(browse_btn)
         layout.addLayout(output_layout)
 
@@ -291,7 +299,7 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         
         # Timer display
         self.time_display = QtWidgets.QLabel("00:00:00.000")
-        self.time_display.setStyleSheet("font-size: 24px; font-weight: bold;")
+        self.time_display.setStyleSheet("font-size: 22px; font-weight: bold;")  # Slightly smaller
         self.time_display.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         
         # Recording indicator
@@ -315,45 +323,60 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         self.record_btn.clicked.connect(self.toggle_recording)
         self.record_btn.setStyleSheet("font-size: 16px; padding: 8px;")
         
-        self.play_btn = QtWidgets.QPushButton("Play")
-        self.play_btn.clicked.connect(self.play_recording)
-        self.play_btn.setEnabled(False)
+        # Replace Play button with Open Folder button
+        self.folder_btn = QtWidgets.QPushButton("Open Destination Folder")
+        self.folder_btn.clicked.connect(self.open_destination_folder)
+        self.folder_btn.setStyleSheet("font-size: 14px; padding: 8px;")
         
         button_layout.addWidget(self.record_btn)
-        button_layout.addWidget(self.play_btn)
+        button_layout.addWidget(self.folder_btn)
         layout.addLayout(button_layout)
 
-        # Real-Time Visualizations
+        # Real-Time Visualizations with vertical level meter
         viz_group = QtWidgets.QGroupBox("Real-Time Visualization")
-        viz_layout = QtWidgets.QVBoxLayout(viz_group)
-        
+        viz_layout = QtWidgets.QHBoxLayout(viz_group)  # Changed to horizontal layout
+        viz_layout.setContentsMargins(8, 12, 8, 8)
+
+        # Create a custom level meter instead of using QProgressBar
+        # This will be a simple colored rectangle that updates with level
+        self.level_meter_widget = QtWidgets.QWidget()
+        self.level_meter_widget.setFixedWidth(40)
+        self.level_meter_widget.setMinimumHeight(180)
+        self.level_meter_widget.setStyleSheet("background-color: black; border: 1px solid gray;")
+
+        # Add layout for labels and meter
+        meter_layout = QtWidgets.QHBoxLayout()
+
+        # Add level labels (0dB, -20dB, etc.)
+        level_labels_layout = QtWidgets.QVBoxLayout()
+        level_labels_layout.addWidget(QtWidgets.QLabel("0 dB"), 0, QtCore.Qt.AlignmentFlag.AlignRight)
+        level_labels_layout.addStretch(1)
+        level_labels_layout.addWidget(QtWidgets.QLabel("-20"), 0, QtCore.Qt.AlignmentFlag.AlignRight)
+        level_labels_layout.addStretch(1)
+        level_labels_layout.addWidget(QtWidgets.QLabel("-40"), 0, QtCore.Qt.AlignmentFlag.AlignRight)
+        level_labels_layout.addStretch(1)
+        level_labels_layout.addWidget(QtWidgets.QLabel("-60"), 0, QtCore.Qt.AlignmentFlag.AlignRight)
+
+        meter_layout.addLayout(level_labels_layout)
+        meter_layout.addWidget(self.level_meter_widget)
+
+        # Store the current audio level for painting
+        self.current_level = 0
+
+        # Waveform display
         self.waveform_label = QtWidgets.QLabel()
-        self.waveform_label.setFixedHeight(200)
+        self.waveform_label.setFixedHeight(180)
         self.waveform_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.waveform_label.setText("Waveform will appear here during recording")
         
-        # VU Meter with green progressbar
-        self.vu_meter = QtWidgets.QProgressBar()
-        self.vu_meter.setMaximum(100)
-        self.vu_meter.setMinimum(0)
-        self.vu_meter.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid #dadce0;
-                border-radius: 4px;
-                background-color: white;
-                text-align: center;
-            }
-            
-            QProgressBar::chunk {
-                background-color: #4CAF50;  /* Green instead of blue */
-                width: 10px;
-            }
-        """)
-        
-        viz_layout.addWidget(self.waveform_label)
-        viz_layout.addWidget(self.vu_meter)
-        
+        # Add meter and waveform to visualization layout
+        viz_layout.addLayout(meter_layout)
+        viz_layout.addWidget(self.waveform_label, 1)  # Give waveform stretch factor
+
         layout.addWidget(viz_group)
+
+        # Now override the paintEvent in the level meter widget to draw the level
+        self.level_meter_widget.paintEvent = self.paint_level_meter
 
         # Report progress
         self.report_progress_bar = QtWidgets.QProgressBar()
@@ -447,30 +470,8 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             self.codec_sel.setCurrentText("flac")
             self.bitrate_sel.setEnabled(False)
         elif fmt == "m4a":
-            # First check if libfdk_aac is available (for HE-AAC support)
-            has_libfdk_aac = False
-            try:
-                codec_check = subprocess.run(
-                    ['ffmpeg', '-encoders'],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                    timeout=2
-                )
-                codec_output = codec_check.stdout.decode('utf-8')
-                has_libfdk_aac = "libfdk_aac" in codec_output
-            except Exception:
-                pass
-                
-            # Add codec options based on availability
-            codec_options = ["aac"]
-            if has_libfdk_aac:
-                codec_options.extend([
-                    "libfdk_aac (HE-AAC v1)", 
-                    "libfdk_aac (HE-AAC v2)"
-                ])
-                
-            self.codec_sel.addItems(codec_options)
+            # Only standard AAC - removed HE-AAC options
+            self.codec_sel.addItems(["aac"])
             self.codec_sel.setCurrentText("aac")
             self.bitrate_sel.setEnabled(True)
 
@@ -504,30 +505,8 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             self.codec_sel2.setCurrentText("flac")
             self.bitrate_sel2.setEnabled(False)
         elif fmt == "m4a":
-            # First check if libfdk_aac is available (for HE-AAC support)
-            has_libfdk_aac = False
-            try:
-                codec_check = subprocess.run(
-                    ['ffmpeg', '-encoders'],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    check=True,
-                    timeout=2
-                )
-                codec_output = codec_check.stdout.decode('utf-8')
-                has_libfdk_aac = "libfdk_aac" in codec_output
-            except Exception:
-                pass
-                
-            # Add codec options based on availability
-            codec_options = ["aac"]
-            if has_libfdk_aac:
-                codec_options.extend([
-                    "libfdk_aac (HE-AAC v1)", 
-                    "libfdk_aac (HE-AAC v2)"
-                ])
-                
-            self.codec_sel2.addItems(codec_options)
+            # Only standard AAC - removed HE-AAC options
+            self.codec_sel2.addItems(["aac"])
             self.codec_sel2.setCurrentText("aac")
             self.bitrate_sel2.setEnabled(True)
 
@@ -635,109 +614,90 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 # Update UI
                 self.record_btn.setText("Stop Recording")
                 self.record_btn.setStyleSheet("background-color: #e63946; color: white; font-size: 16px; padding: 8px; border-radius: 4px;")
-                self.play_btn.setEnabled(False)
+                self.folder_btn.setEnabled(False)
                 self.file_status.setText("Starting recording..." + (" (dual format)" if dual_format_enabled else ""))
                 self.file_status.setStyleSheet("color: #FFC107; font-weight: bold;")  # Yellow
                 self.statusBar().showMessage("Recording in progress..." + (" (dual format)" if dual_format_enabled else ""))
         
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Unable to start recording: {str(e)}")
-            self.statusBar().showMessage(f"Error: {str(e)}")
-
-    def stop_recording(self):
-        """Stop audio recording"""
-        try:
-            # Check if dual format was being used
-            dual_format = hasattr(self.recorder, 'dual_format_enabled') and self.recorder.dual_format_enabled
-            
-            # Stop timers
-            self.timer.stop()
-            self.time_timer.stop()
-            self.blink_timer.stop()
-            
-            # Reset recording indicator
-            self.recording_indicator.setStyleSheet("font-size: 24px; color: gray;")
-            
-            # Stop file monitoring
-            if self.file_monitor:
-                self.file_monitor.stop()
-                self.file_monitor.wait()
-                self.file_monitor = None
-            
-            # Reset file status
-            self.file_status.setText("Processing..." + (" (dual format)" if dual_format else ""))
-            self.file_status.setStyleSheet("color: #1a73e8; font-weight: bold;")
-            
-            # Stop the recording
-            success = self.recorder.stop_recording()
-            
-            # Update UI
-            self.record_btn.setText("Start Recording")
-            self.record_btn.setStyleSheet(f"background-color: {self.primary_blue}; color: white; font-size: 16px; padding: 8px; border-radius: 4px;")
-            
-            if success:
-                self.play_btn.setEnabled(True)
-                
-                # Store output file references for later use
-                self.last_recorded_file = self.recorder.output_file
-                if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
-                    self.last_recorded_file2 = self.recorder.output_file2
-                    # Enable the "Play Second Format" menu item
-                    self.play_second_format_action.setEnabled(True)
-                
-                status_msg = f"Recording saved: {self.recorder.output_file}"
-                if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
-                    status_msg += f" and {self.recorder.output_file2}"
-                self.statusBar().showMessage(status_msg)
-                
-                # Ask if user wants to generate a report
-                reply = QtWidgets.QMessageBox.question(
-                    self,
-                    "Generate Report",
-                    "Would you like to generate a detailed report for this recording?",
-                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
-                )
-                
-                if reply == QtWidgets.QMessageBox.StandardButton.Yes:
-                    # Start report generation in separate thread
-                    self.start_report_generation(self.recorder.output_file)
-                    
-                    # If dual format was used, store the second file info
-                    if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
-                        self.second_report_file = self.recorder.output_file2
-                        QtWidgets.QMessageBox.information(
-                            self,
-                            "Dual Format Report",
-                            "A report will also be generated for the second format recording after the first one completes."
-                        )
-            else:
-                self.play_btn.setEnabled(False)
-                self.statusBar().showMessage("Error: Recording was not saved")
-                
-        except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Warning", f"Problem stopping recording: {str(e)}")
 
-    def start_report_generation(self, audio_file=None):
+    def queue_report_generation(self, audio_file):
+        """Add a file to the report generation queue"""
+        if audio_file and os.path.exists(audio_file):
+            self.report_queue.append(audio_file)
+            # Start processing queue if not already running
+            if not self.is_report_processing:
+                self.process_report_queue()
+
+    def process_report_queue(self):
+        """Process the next file in the report queue"""
+        if not self.report_queue:
+            self.is_report_processing = False
+            return
+            
+        self.is_report_processing = True
+        file_to_process = self.report_queue[0]
+        
+        # Find appropriate format selector and codec selector based on file extension
+        file_ext = os.path.splitext(file_to_process)[1].lower()[1:]  # Get extension without dot
+        
+        # Determine which format selectors to use based on file extension
+        if self.last_recorded_file2 and file_to_process == self.last_recorded_file2:
+            # This is the second format file
+            format_sel = self.format_sel2
+            codec_sel = self.codec_sel2
+            bitrate_sel = self.bitrate_sel2
+            
+            # Ensure format is set correctly for this file
+            if format_sel.currentText() != file_ext:
+                for i in range(format_sel.count()):
+                    if format_sel.itemText(i) == file_ext:
+                        format_sel.setCurrentIndex(i)
+                        break
+        else:
+            # This is the primary format file
+            format_sel = self.format_sel
+            codec_sel = self.codec_sel
+            bitrate_sel = self.bitrate_sel
+            
+            # Ensure format is set correctly
+            if format_sel.currentText() != file_ext:
+                for i in range(format_sel.count()):
+                    if format_sel.itemText(i) == file_ext:
+                        format_sel.setCurrentIndex(i)
+                        break
+                        
+        # Start report generation
+        self.start_report_generation(file_to_process, format_sel, codec_sel, bitrate_sel)
+
+    def start_report_generation(self, audio_file=None, format_sel=None, codec_sel=None, bitrate_sel=None):
         """Start report generation in a separate thread"""
         # Use provided file or last recorded file
         file_to_process = audio_file if audio_file else self.last_recorded_file
         
         if not file_to_process or not os.path.exists(file_to_process):
             QtWidgets.QMessageBox.warning(self, "Error", "No valid audio file to process")
+            # Continue with next file in queue if this one fails
+            self.handle_report_finished(False, "Invalid file")
             return
             
+        # Use provided selectors or defaults
+        format_selector = format_sel if format_sel else self.format_sel
+        codec_selector = codec_sel if codec_sel else self.codec_sel
+        bitrate_selector = bitrate_sel if bitrate_sel else self.bitrate_sel
+            
         # Show progress
-        self.report_status.setText("Preparing report...")
+        self.report_status.setText(f"Preparing report for {os.path.basename(file_to_process)}...")
         self.report_progress_bar.setVisible(True)
         
         # Create and start report thread
         self.report_generator = ReportGeneratorThread(
             file_to_process, 
-            self.format_sel, 
-            self.codec_sel, 
-            self.bitrate_sel, 
-            self.temp_dir,
-            SOFTWARE_VERSION  # Pass the software version
+            format_selector, 
+            codec_selector, 
+            bitrate_selector, 
+            self.temp_dir
         )
         self.report_generator.report_progress.connect(self.handle_report_progress)
         self.report_generator.report_finished.connect(self.handle_report_finished)
@@ -750,8 +710,25 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 return
                 
             audio_data = np.frombuffer(self.recorder.frames[-1], dtype=np.int16)
-            peak = np.abs(audio_data).max()
-            self.vu_meter.setValue(int(peak/32767*100))
+            
+            # Calculate peak level
+            peak = float(np.abs(audio_data).max())
+            
+            # Scale peak value to meter range (0-100)
+            # Using logarithmic scaling for better visual response
+            if peak > 0:
+                # Convert to dB, clamped to -60dB minimum
+                db = max(-60, 20 * np.log10(peak / 32767))
+                # Map -60dB..0dB to 0..100%
+                self.current_level = (db + 60) / 60 * 100
+            else:
+                self.current_level = 0
+                
+            # Print debug info
+            print(f"Peak: {peak:.2f}, Level: {self.current_level:.1f}%, dB: {20 * np.log10(max(1, peak) / 32767):.1f}")
+            
+            # Request a repaint of the level meter
+            self.level_meter_widget.update()
             
             # Ensure temp directory exists
             if not os.path.exists(self.temp_dir):
@@ -780,6 +757,10 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 self.waveform_label.setText("Updating visualization...")
             
         except Exception as e:
+            # Print full exception for debugging
+            import traceback
+            traceback.print_exc()
+            
             # Limit error messages
             if not hasattr(self, '_logged_viz_error'):
                 self._logged_viz_error = True
@@ -845,135 +826,29 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         
     def handle_report_finished(self, success, message):
         """Handle report generation completion"""
-        # Store reference to the just-completed report
-        completed_report = self.report_generator
+        # Clear the report generator reference
         self.report_generator = None
-        self.report_progress_bar.setVisible(False)
         
         if success:
             self.report_status.setText(f"Report saved: {message}")
             self.report_status.setStyleSheet("color: #4CAF50;")  # Green
-            
-            # Check if we need to generate a report for a second file
-            if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
-                second_file = self.second_report_file
-                self.second_report_file = None  # Clear the reference
-                
-                # Print debug info
-                print(f"Starting second report for file: {second_file}")
-                
-                # Use QTimer.singleShot to allow UI to update before starting second report generation
-                # Use longer delay (2000ms) to ensure first report is completely finished
-                QtCore.QTimer.singleShot(2000, lambda: self.start_second_report(second_file))
         else:
             self.report_status.setText(f"Report error: {message}")
             self.report_status.setStyleSheet("color: #e63946;")  # Red
-            
-            # If there was a second file pending, try to generate its report anyway
-            if hasattr(self, 'second_report_file') and self.second_report_file and os.path.exists(self.second_report_file):
-                second_file = self.second_report_file
-                self.second_report_file = None  # Clear the reference
-                # Start report generation for second file after a short delay
-                QtCore.QTimer.singleShot(2000, lambda: self.start_second_report(second_file))
         
-        # Display message for longer time (20 seconds)
-        QtCore.QTimer.singleShot(20000, lambda: self.report_status.setText(""))
+        # Remove the processed file from the queue
+        if self.report_queue:
+            self.report_queue.pop(0)
         
-    def start_second_report(self, file_path):
-        """Start generation of the second report (for dual format)"""
-        if not file_path or not os.path.exists(file_path):
-            self.report_status.setText("Error: Second format file not found")
-            self.report_status.setStyleSheet("color: #e63946;")  # Red
-            return
-            
-        # Additional validation: make sure the file size is not zero
-        if os.path.getsize(file_path) == 0:
-            self.report_status.setText("Error: Second format file is empty")
-            self.report_status.setStyleSheet("color: #e63946;")  # Red
-            return
-            
-        # Print debug info about file path and format
-        print(f"Starting second report for: {file_path}")
-        print(f"Format: {self.format_sel2.currentText()}, Codec: {self.codec_sel2.currentText()}")
-        
-        # Find the matching format for the file extension
-        file_ext = os.path.splitext(file_path)[1].lower()[1:]  # Get extension without dot
-        if self.format_sel2.currentText() != file_ext:
-            # If current format doesn't match file extension, find the right one
-            for i in range(self.format_sel2.count()):
-                if self.format_sel2.itemText(i) == file_ext:
-                    self.format_sel2.setCurrentIndex(i)
-                    break
-            
-        self.report_status.setText("Preparing second format report...")
-        self.report_progress_bar.setVisible(True)
-        
-        # Create and start report thread for second file with correct format settings
-        report_generator = ReportGeneratorThread(
-            file_path, 
-            self.format_sel2,    # Use second format settings 
-            self.codec_sel2,     # Use second codec settings
-            self.bitrate_sel2,   # Use second bitrate settings
-            self.temp_dir,
-            SOFTWARE_VERSION     # Pass the software version
-        )
-        self.report_generator = report_generator
-        self.report_generator.report_progress.connect(self.handle_report_progress)
-        self.report_generator.report_finished.connect(self.handle_report_finished)
-        self.report_generator.start()
-
-    def play_recording(self):
-        """Play the recorded audio file with default application"""
-        try:
-            dual_format = hasattr(self, 'last_recorded_file2') and self.last_recorded_file2
-            
-            # Play primary recording
-            if self.recorder.output_file and os.path.exists(self.recorder.output_file):
-                open_file_with_default_app(self.recorder.output_file)
-                # Also open the log file if it exists
-                if self.recorder.log_file and os.path.exists(self.recorder.log_file):
-                    open_file_with_default_app(self.recorder.log_file)
-                    
-                # Open second recording if dual format was used
-                if self.recorder.dual_format_enabled and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
-                    open_file_with_default_app(self.recorder.output_file2)
-                    if self.recorder.log_file2 and os.path.exists(self.recorder.log_file2):
-                        open_file_with_default_app(self.recorder.log_file2)
-                    
-            elif self.last_recorded_file and os.path.exists(self.last_recorded_file):
-                open_file_with_default_app(self.last_recorded_file)
-                # Try to open the corresponding log file
-                log_file = os.path.splitext(self.last_recorded_file)[0] + "_log"
-                if os.path.exists(log_file):
-                    open_file_with_default_app(log_file)
-                    
-                # Open second recording if dual format was used
-                if dual_format and os.path.exists(self.last_recorded_file2):
-                    open_file_with_default_app(self.last_recorded_file2)
-                    log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log"
-                    if os.path.exists(log_file2):
-                        open_file_with_default_app(log_file2)
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to play file: {str(e)}")
-
-    def play_second_format(self):
-        """Play the second format recording if it exists"""
-        try:
-            if hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
-                open_file_with_default_app(self.recorder.output_file2)
-                # Also open the second log file if it exists
-                if hasattr(self.recorder, 'log_file2') and self.recorder.log_file2 and os.path.exists(self.recorder.log_file2):
-                    open_file_with_default_app(self.recorder.log_file2)
-            elif hasattr(self, 'last_recorded_file2') and self.last_recorded_file2 and os.path.exists(self.last_recorded_file2):
-                open_file_with_default_app(self.last_recorded_file2)
-                # Try to open the corresponding log file
-                log_file2 = os.path.splitext(self.last_recorded_file2)[0] + "_log"
-                if os.path.exists(log_file2):
-                    open_file_with_default_app(log_file2)
-            else:
-                QtWidgets.QMessageBox.information(self, "Information", "No second format recording is available")
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to play second format file: {str(e)}")
+        # Continue processing queue if there are more files
+        if self.report_queue:
+            # Use a timer to create a small delay between reports
+            QtCore.QTimer.singleShot(1000, self.process_report_queue)
+        else:
+            self.is_report_processing = False
+            self.report_progress_bar.setVisible(False)
+            # Hide message after 15 seconds
+            QtCore.QTimer.singleShot(15000, lambda: self.report_status.setText(""))
 
     def show_report_dialog(self):
         """Show dialog to select an audio file for report generation"""
@@ -986,14 +861,46 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
         
         if file_path and os.path.exists(file_path):
             self.last_recorded_file = file_path
-            self.start_report_generation(file_path)
+            self.queue_report_generation(file_path)
     
+    # New method to open destination folder (replaces play_recording)
+    def open_destination_folder(self):
+        """Open the destination folder where recordings are saved"""
+        try:
+            output_dir = self.output_path.text()
+            if os.path.exists(output_dir):
+                open_directory(output_dir)
+            else:
+                QtWidgets.QMessageBox.warning(self, "Warning", "Output directory does not exist")
+                
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to open directory: {str(e)}")
+
+    # Modified to open directory instead of playing file
+    def open_second_format_folder(self):
+        """Open the folder containing the second format recording"""
+        try:
+            second_file = None
+            
+            if hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                second_file = self.recorder.output_file2
+            elif hasattr(self, 'last_recorded_file2') and self.last_recorded_file2 and os.path.exists(self.last_recorded_file2):
+                second_file = self.last_recorded_file2
+                
+            if second_file:
+                second_dir = os.path.dirname(second_file)
+                open_directory(second_dir)
+            else:
+                QtWidgets.QMessageBox.information(self, "Information", "No second format recording is available")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Unable to open folder: {str(e)}")
+
     def show_about_dialog(self):
         """Show about dialog"""
         QtWidgets.QMessageBox.about(
             self,
-            f"About KVSrecorder {SOFTWARE_VERSION}",
-            f"""<h2>KVSrecorder {SOFTWARE_VERSION}</h2>
+            f"About KVSrecorder v{APP_VERSION}",
+            f"""<h2>KVSrecorder v{APP_VERSION}</h2>
             <p>A professional audio recording and analysis application.</p>
             <p>Features:</p>
             <ul>
@@ -1001,10 +908,9 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
                 <li>Dual format simultaneous recording</li>
                 <li>Real-time visualization</li>
                 <li>Detailed audio reports with waveform and spectrogram</li>
-                <li>Support for multiple audio formats and codecs including HE-AAC</li>
+                <li>Support for multiple audio formats and codecs</li>
                 <li>File integrity verification with SHA-256 hash</li>
-            </ul>
-            <p>Version {SOFTWARE_VERSION}</p>"""
+            </ul>"""
         )
 
     def closeEvent(self, event):
@@ -1033,3 +939,124 @@ class AudioProAdvanced(QtWidgets.QMainWindow):
             print(f"Error cleaning temporary files: {e}")
             
         event.accept()
+
+    def stop_recording(self):
+        """Stop audio recording"""
+        try:
+            # Check if dual format was being used
+            dual_format = hasattr(self.recorder, 'dual_format_enabled') and self.recorder.dual_format_enabled
+            
+            # Stop timers
+            self.timer.stop()
+            self.time_timer.stop()
+            self.blink_timer.stop()
+            
+            # Reset recording indicator
+            self.recording_indicator.setStyleSheet("font-size: 24px; color: gray;")
+            
+            # Stop file monitoring
+            if self.file_monitor:
+                self.file_monitor.stop()
+                self.file_monitor.wait()
+                self.file_monitor = None
+            
+            # Reset file status
+            self.file_status.setText("Processing..." + (" (dual format)" if dual_format else ""))
+            self.file_status.setStyleSheet("color: #1a73e8; font-weight: bold;")
+            
+            # Stop the recording
+            success = self.recorder.stop_recording()
+            
+            # Update UI
+            self.record_btn.setText("Start Recording")
+            self.record_btn.setStyleSheet(f"background-color: {self.primary_blue}; color: white; font-size: 16px; padding: 8px; border-radius: 4px;")
+            
+            if success:
+                self.folder_btn.setEnabled(True)
+                
+                # Store output file references for later use
+                self.last_recorded_file = self.recorder.output_file
+                if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
+                    self.last_recorded_file2 = self.recorder.output_file2
+                    # Enable the "Open Second Format Folder" menu item
+                    self.play_second_format_action.setEnabled(True)
+                
+                status_msg = f"Recording saved: {self.recorder.output_file}"
+                if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2:
+                    status_msg += f" and {self.recorder.output_file2}"
+                self.statusBar().showMessage(status_msg)
+                
+                # Ask if user wants to generate a report
+                reply = QtWidgets.QMessageBox.question(
+                    self,
+                    "Generate Report",
+                    "Would you like to generate a detailed report for this recording?",
+                    QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
+                )
+                
+                if reply == QtWidgets.QMessageBox.StandardButton.Yes:
+                    # Add files to report queue
+                    self.queue_report_generation(self.recorder.output_file)
+                    
+                    # If dual format was used, add second file to report queue
+                    if dual_format and hasattr(self.recorder, 'output_file2') and self.recorder.output_file2 and os.path.exists(self.recorder.output_file2):
+                        QtWidgets.QMessageBox.information(
+                            self,
+                            "Dual Format Report",
+                            "A report will also be generated for the second format recording after the first one completes."
+                        )
+                        self.queue_report_generation(self.recorder.output_file2)
+            else:
+                self.folder_btn.setEnabled(False)
+                self.statusBar().showMessage("Error: Recording was not saved")
+                
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Warning", f"Problem stopping recording: {str(e)}")
+
+    def paint_level_meter(self, event):
+        """Custom paint method for the level meter widget"""
+        painter = QtGui.QPainter(self.level_meter_widget)
+        
+        # Get the widget dimensions
+        width = self.level_meter_widget.width()
+        height = self.level_meter_widget.height()
+        
+        # Draw background
+        painter.fillRect(0, 0, width, height, QtGui.QColor('#212121'))  # Dark gray background
+        
+        # Calculate the level height (inverted - 0 at top, 100 at bottom)
+        level_height = int(height * (1 - self.current_level / 100))
+        
+        # Draw the level meter (from bottom up)
+        # Red for top 10% of range (0 to -10dB)
+        if self.current_level > 90:
+            red_zone_height = min(int(height * 0.1), height - level_height)
+            painter.fillRect(0, level_height, width, red_zone_height, QtGui.QColor('#FF4444'))  # Red
+            
+        # Yellow for next 20% of range (-10dB to -30dB)
+        if self.current_level > 70:
+            yellow_start = max(level_height, int(height * 0.1))
+            yellow_height = min(int(height * 0.2), height - yellow_start)
+            painter.fillRect(0, yellow_start, width, yellow_height, QtGui.QColor('#FFFF00'))  # Yellow
+            
+        # Green for the rest (-30dB to -60dB)
+        if self.current_level > 0:
+            green_start = max(level_height, int(height * 0.3))
+            green_height = height - green_start
+            painter.fillRect(0, green_start, width, green_height, QtGui.QColor('#44FF44'))  # Green
+        
+        # Draw tick marks for reference
+        pen = QtGui.QPen(QtGui.QColor('#FFFFFF'))
+        pen.setWidth(1)
+        painter.setPen(pen)
+        
+        # 0dB mark at 0% height
+        painter.drawLine(0, int(height * 0.0), width, int(height * 0.0))
+        
+        # -20dB mark at 33% height
+        painter.drawLine(0, int(height * 0.33), width, int(height * 0.33))
+        
+        # -40dB mark at 66% height
+        painter.drawLine(0, int(height * 0.66), width, int(height * 0.66))
+        
+        painter.end()

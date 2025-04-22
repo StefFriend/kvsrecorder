@@ -18,13 +18,7 @@ import warnings
 from datetime import timedelta
 import sys
 import hashlib
-
-# Try to import SOFTWARE_VERSION from ui_components
-try:
-    from ui_components import SOFTWARE_VERSION
-except ImportError:
-    # Fallback version if import fails
-    SOFTWARE_VERSION = "1.0.2"
+from utils import APP_VERSION
 
 # Filter librosa warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -36,7 +30,7 @@ class ReportGeneratorThread(QThread):
     report_progress = pyqtSignal(str)
     report_finished = pyqtSignal(bool, str)
     
-    def __init__(self, output_file, format_sel, codec_sel, bitrate_sel, temp_dir, version=SOFTWARE_VERSION):
+    def __init__(self, output_file, format_sel, codec_sel, bitrate_sel, temp_dir):
         super().__init__()
         self.output_file = output_file
         self.format_sel = format_sel
@@ -44,7 +38,6 @@ class ReportGeneratorThread(QThread):
         self.bitrate_sel = bitrate_sel
         self.temp_dir = temp_dir
         self.channels = 1  # Default to mono
-        self.version = version  # Store the software version
         
     def calculate_file_hash(self, file_path):
         """Calculate SHA-256 hash of the audio file"""
@@ -60,12 +53,8 @@ class ReportGeneratorThread(QThread):
             self.report_progress.emit("Starting report generation...")
             
             # Verify file exists and is not empty
-            if not os.path.exists(self.output_file):
-                self.report_finished.emit(False, f"File not found: {self.output_file}")
-                return
-                
-            if os.path.getsize(self.output_file) == 0:
-                self.report_finished.emit(False, f"File is empty: {self.output_file}")
+            if not os.path.exists(self.output_file) or os.path.getsize(self.output_file) == 0:
+                self.report_finished.emit(False, f"Invalid or empty file: {self.output_file}")
                 return
                 
             # Create report filename
@@ -152,26 +141,31 @@ class ReportGeneratorThread(QThread):
             self.report_progress.emit("Generating waveform...")
             plt.figure(figsize=(10, 4), facecolor='white')
             librosa.display.waveshow(audio, sr=sr, color='#4CAF50')  # Changed to green
-            plt.title("Complete Waveform", color='#1a73e8', fontweight='bold')
+            plt.title("Waveform", color='#1a73e8', fontweight='bold')
             plt.grid(True, color='#e8f0fe', linestyle='-', linewidth=0.5)
             plt.savefig(waveform_path, bbox_inches='tight', facecolor='white')
+            plt.close()
 
-            # Generate spectrogram with green theme and proper frequency labeling
+            # Generate spectrogram with green theme and proper frequency axis labels
             self.report_progress.emit("Generating spectrogram...")
             plt.figure(figsize=(10, 4), facecolor='white')
             S = librosa.stft(audio)
+            
             # Use np.abs to avoid warning on complex input
             im = librosa.display.specshow(
                 librosa.amplitude_to_db(np.abs(S), ref=np.max), 
                 sr=sr, 
-                y_axis='hz',  # Use 'hz' to properly label frequency on y-axis
+                y_axis='hz',  # Changed from 'log' to 'hz' to show frequency in Hz
                 x_axis='time', 
-                cmap='Greens'  # Changed to green
+                cmap='Greens'
             )
-            plt.title("Complete Spectrogram", color='#1a73e8', fontweight='bold')
-            plt.ylabel("Frequency (Hz)", color='#1a73e8')  # Added y-axis label for clarity
+            
+            plt.title("Spectrogram", color='#1a73e8', fontweight='bold')
+            plt.ylabel("Frequency (Hz)", color='#1a73e8')
+            plt.xlabel("Time (s)", color='#1a73e8')
+            
             cbar = plt.colorbar(im, format="%+2.0f dB")
-            cbar.set_label('Amplitude (dB)', color='#1a73e8')  # Add label to colorbar
+            cbar.set_label('Amplitude (dB)', color='#1a73e8')
             cbar.ax.yaxis.label.set_color('#1a73e8')
             cbar.ax.tick_params(colors='#1a73e8')
             plt.savefig(spectrogram_path, bbox_inches='tight', facecolor='white')
@@ -204,12 +198,7 @@ class ReportGeneratorThread(QThread):
             elif codec_base == "pcm_f32le":
                 bitdepth = "32-bit float"
             elif codec_base == "libfdk_aac":
-                if "v1" in codec_full:
-                    bitdepth = "Variable (HE-AAC v1)"
-                elif "v2" in codec_full:
-                    bitdepth = "Variable (HE-AAC v2)"
-                else:
-                    bitdepth = "Variable (AAC-LC)"
+                bitdepth = "Variable (AAC-LC)"
             
             # Also check the description part for bit depth information
             if " (" in codec_full and "bit" in codec_full:
@@ -249,33 +238,29 @@ class ReportGeneratorThread(QThread):
             # Generate PDF with white and blue theme
             self.report_progress.emit("Creating PDF report...")
             class PDF(FPDF):
-                def __init__(self, version=SOFTWARE_VERSION):
-                    super().__init__()
-                    self.version = version
-                    
                 def header(self):
                     # Logo (if available)
                     # self.image('logo.png', 10, 8, 33)
-                    # Title in blue with version
+                    # Title in blue
                     self.set_font('Arial', 'B', 18)
                     self.set_text_color(26, 115, 232)  # #1a73e8
-                    self.cell(0, 10, f'KVSrecorder {self.version}', 0, 1, 'C')
+                    self.cell(0, 10, f'KVSrecorder v{APP_VERSION}', 0, 1, 'C')
                     self.ln(10)
                 
                 def footer(self):
                     self.set_y(-15)
                     self.set_font('Arial', 'I', 8)
                     self.set_text_color(26, 115, 232)  # #1a73e8
-                    self.cell(0, 10, f'Page {self.page_no()}/{{nb}} - KVSrecorder {self.version}', 0, 0, 'C')
+                    self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', 0, 0, 'C')
             
-            pdf = PDF(self.version)
+            pdf = PDF()
             pdf.alias_nb_pages()
             pdf.add_page()
             
             # Report header
             pdf.set_font("Arial", "B", 16)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
-            pdf.cell(0, 10, "Complete Audio Report", ln=True, align='C')
+            pdf.cell(0, 10, "Audio Report", ln=True, align='C')
             pdf.line(10, pdf.get_y(), 200, pdf.get_y())
             pdf.ln(5)
             
@@ -305,10 +290,6 @@ class ReportGeneratorThread(QThread):
             pdf.cell(50, 8, f"SHA-256 Hash:", 0)
             pdf.cell(0, 8, f"{file_hash}", 0, 1)
             
-            # Add software version
-            pdf.cell(50, 8, f"Software Version:", 0)
-            pdf.cell(0, 8, f"KVSrecorder {self.version}", 0, 1)
-            
             pdf.ln(5)
             pdf.set_font("Arial", "B", 12)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
@@ -331,6 +312,10 @@ class ReportGeneratorThread(QThread):
             pdf.cell(50, 8, f"Sample Rate:", 0)
             pdf.cell(0, 8, f"{sr} Hz", 0, 1)
             
+            # Add software version
+            pdf.cell(50, 8, f"Software Version:", 0)
+            pdf.cell(0, 8, f"{APP_VERSION}", 0, 1)
+            
             pdf.ln(5)
             pdf.set_font("Arial", "B", 12)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
@@ -350,19 +335,21 @@ class ReportGeneratorThread(QThread):
             pdf.add_page()
             pdf.set_font("Arial", "B", 14)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
-            pdf.cell(0, 10, "Waveform", ln=True)
+            #pdf.cell(0, 10, "Waveform", ln=True)
             pdf.image(waveform_path, w=180)
             
             pdf.add_page()
             pdf.set_font("Arial", "B", 14)
             pdf.set_text_color(26, 115, 232)  # #1a73e8
-            pdf.cell(0, 10, "Spectrogram", ln=True)
+            #pdf.cell(0, 10, "Spectrogram", ln=True)
             pdf.image(spectrogram_path, w=180)
             
             self.report_progress.emit("Saving report...")
             pdf.output(pdf_path)
             
-            # Signal successful completion without opening the PDF
+            # Removed automatic opening of the report file as requested
+            
+            # Signal successful completion
             self.report_finished.emit(True, pdf_path)
                     
         except Exception as e:
